@@ -36,5 +36,3 @@ Work is tracked in GitHub Projects using:
 - **Estimate:** numeric complexity estimate
 - **Iteration:** two-week development iterations
 - **Views:** Team Backlog (Table), Kanban Board (Board), Product Roadmap (Roadmap)
-
-See [`PROJECT_README.md`](PROJECT_README.md), [`docs/PROJECT_SETUP.md`](docs/PROJECT_SETUP.md), and [`PROGRESS_LOG.md`](PROGRESS_LOG.md) for the assignment setup.
