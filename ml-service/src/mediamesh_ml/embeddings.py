@@ -4,7 +4,7 @@ import re
 from functools import cached_property
 
 from mediamesh_ml.config import Settings
-from mediamesh_ml.contracts import ModelIdentity
+from mediamesh_ml.contracts import ModelIdentity, embedding_version
 
 
 class ClipEngine:
@@ -41,7 +41,7 @@ class ClipEngine:
 
     @property
     def model_version(self) -> str:
-        return f"{self.identity.name}@{self.identity.revision}:rgb-l2-v1"
+        return embedding_version(self.identity)
 
     def load(self) -> None:
         """Explicit download/load step; may be run offline against a populated cache."""

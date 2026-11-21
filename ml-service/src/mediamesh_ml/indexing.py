@@ -2,7 +2,13 @@
 
 from uuid import UUID
 
-from mediamesh_ml.contracts import EmbeddingEngine, MediaSource, VectorRecord, VectorRepository
+from mediamesh_ml.contracts import (
+    EmbeddingEngine,
+    MediaSource,
+    VectorRecord,
+    VectorRepository,
+    embedding_version,
+)
 from mediamesh_ml.video import VideoSampler
 
 
@@ -21,8 +27,7 @@ class IndexingService:
 
     @property
     def model_version(self) -> str:
-        identity = self.engine.identity
-        return f"{identity.name}@{identity.revision}:rgb-l2-v1"
+        return embedding_version(self.engine.identity)
 
     def prepare_image(self, asset_id: UUID, reference: str) -> list[VectorRecord]:
         with self.source.materialize(reference) as path:

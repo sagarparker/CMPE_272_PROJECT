@@ -61,6 +61,21 @@ class PgVectorRepository:
     def __init__(self, settings: Settings):
         self.settings = settings
 
+    def is_ready(self) -> bool:
+        with connection(self.settings) as conn:
+            row = conn.execute(
+                "SELECT format_type(atttypid, atttypmod) FROM pg_attribute "
+                "WHERE attrelid=to_regclass('public.asset_vectors') "
+                "AND attname='embedding' AND NOT attisdropped"
+            ).fetchone()
+            if not row or row[0] != f"vector({DIMENSIONS})":
+                return False
+            conn.execute(
+                "SELECT asset_id, model_version, frame_timestamp_seconds, embedding "
+                "FROM public.asset_vectors LIMIT 0"
+            )
+        return True
+
     def replace(self, asset_id: UUID, model_version: str, records: Sequence[VectorRecord]) -> None:
         with connection(self.settings) as conn:
             replace_in_transaction(conn, asset_id, model_version, records)

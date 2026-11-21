@@ -17,6 +17,10 @@ class ModelIdentity:
     dimensions: int
 
 
+def embedding_version(identity: ModelIdentity) -> str:
+    return f"{identity.name}@{identity.revision}:rgb-l2-v1"
+
+
 @dataclass(frozen=True)
 class VectorRecord:
     asset_id: UUID
@@ -43,6 +47,8 @@ class ClaimedJob:
 
 
 class EmbeddingEngine(Protocol):
+    def load(self) -> None: ...
+
     @property
     def identity(self) -> ModelIdentity: ...
 
