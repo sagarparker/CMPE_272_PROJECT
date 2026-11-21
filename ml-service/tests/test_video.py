@@ -32,3 +32,45 @@ def test_invalid_probe_metadata_is_rejected(monkeypatch, payload):
     )
     with pytest.raises(ValueError):
         VideoSampler(Settings()).probe(Path("/video.webm"))
+
+
+@pytest.fixture
+def short_video(tmp_path):
+    import subprocess
+
+    path = tmp_path / "test.mp4"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=160x90:rate=4",
+            "-t",
+            "4",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return path
+
+
+def test_real_ffmpeg_sampling_timestamps_and_cleanup(short_video, tmp_path):
+    temp = tmp_path / "frames"
+    temp.mkdir()
+    sampler = VideoSampler(Settings(video_max_frames=4, video_temp_root=temp))
+    assert sampler.probe(short_video).duration_seconds == pytest.approx(4)
+    with sampler.extract(short_video) as frames:
+        assert len(frames) == 4
+        assert [f.timestamp_seconds for f in frames] == pytest.approx([0, 1, 2, 3])
+        paths = [f.path for f in frames]
+        assert all(p.is_file() for p in paths)
+    assert all(not p.exists() for p in paths)
+    assert not list(temp.iterdir())

@@ -2,9 +2,13 @@
 
 import json
 import math
+import re
 import subprocess
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from mediamesh_ml.config import Settings
 
@@ -90,3 +94,73 @@ class VideoSampler:
         ):
             raise ValueError("Video dimensions exceed supported limits")
         return info
+
+    @contextmanager
+    def extract(self, path: Path):
+        deadline = time.monotonic() + self.settings.video_timeout_seconds
+        info = self.probe(path, timeout=deadline - time.monotonic())
+        interval = sampling_interval(info.duration_seconds, self.settings.video_max_frames)
+        with TemporaryDirectory(
+            prefix="mediamesh-frames-", dir=self.settings.video_temp_root
+        ) as tmp:
+            output = Path(tmp)
+            # Normalize actual decoded PTS to the first video frame. showinfo records
+            # timestamps after selection, before the output encoder changes timing.
+            filters = (
+                "setpts=PTS-STARTPTS,"
+                f"select='gte(t,selected_n*{interval:.12f})',"
+                "scale=w='min(1280,iw)':h='min(720,ih)':force_original_aspect_ratio=decrease,"
+                "showinfo"
+            )
+            result = run_tool(
+                [
+                    "ffmpeg",
+                    "-nostdin",
+                    "-hide_banner",
+                    "-loglevel",
+                    "info",
+                    "-xerror",
+                    "-threads",
+                    "2",
+                    "-filter_threads",
+                    "1",
+                    *INPUT_OPTIONS,
+                    "-i",
+                    str(path),
+                    "-map",
+                    "0:v:0",
+                    "-an",
+                    "-sn",
+                    "-dn",
+                    "-vf",
+                    filters,
+                    "-fps_mode",
+                    "vfr",
+                    "-frames:v",
+                    str(self.settings.video_max_frames),
+                    "-q:v",
+                    "3",
+                    str(output / "frame-%03d.jpg"),
+                ],
+                deadline - time.monotonic(),
+            )
+            timestamps = [
+                float(value)
+                for value in re.findall(
+                    r"\bn:\s*\d+\s+pts:\s*\S+\s+pts_time:\s*([0-9.eE+-]+)", result.stderr
+                )
+            ]
+            paths = sorted(output.glob("frame-*.jpg"))
+            if (
+                not paths
+                or len(paths) > self.settings.video_max_frames
+                or len(timestamps) < len(paths)
+            ):
+                raise ValueError("Video extraction returned no frames or invalid timestamps")
+            # FFmpeg may filter one extra frame before enforcing the output limit.
+            timestamps = timestamps[: len(paths)]
+            if any(not math.isfinite(t) or t < 0 or t >= info.duration_seconds for t in timestamps):
+                raise ValueError("Decoded frame timestamp is outside the video duration")
+            if timestamps != sorted(set(timestamps)):
+                raise ValueError("Decoded frame timestamps must be unique and increasing")
+            yield [VideoFrame(p, t) for p, t in zip(paths, timestamps, strict=True)]
