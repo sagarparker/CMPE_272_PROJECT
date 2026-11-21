@@ -24,6 +24,8 @@ x-runtime: &runtime
   build:
     context: .
     target: runtime
+    additional_contexts:
+      migrations: ../backend/src/main/resources/db/migration
   init: true
   environment: *app-environment
   volumes:
@@ -92,6 +94,8 @@ services:
     build:
       context: .
       target: tools
+      additional_contexts:
+        migrations: ../backend/src/main/resources/db/migration
     profiles: [tools]
     init: true
     environment: *app-environment

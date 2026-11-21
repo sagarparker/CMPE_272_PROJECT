@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
 WORKDIR /app
 COPY --chown=app:app pyproject.toml uv.lock ./
 COPY --chown=app:app src ./src
+COPY --from=migrations --chown=app:app V3*.sql ./migrations/
 USER app
 
 FROM base AS runtime
