@@ -8,7 +8,7 @@ The [original assignment](../docs/team/03_PERSON_3_ML_RETRIEVAL.md) and
 - `GET /health`: liveness only; does not imply model/database readiness.
 - `POST /internal/search`: `{query,limit}` ->
   `{matches:[{assetId,score,frameTimestampSeconds}]}`. Image timestamps are null.
-  No S3 URLs, user data, or metadata. Implement in step 7.
+  No S3 URLs, user data, or metadata. Implemented in step 7.
 - `POST /internal/similar`: `{assetId,limit}` -> the same matches structure.
   Reserved for step 8.
 - Invalid input is 400, absent assets are 404 where applicable. Spring Boot
@@ -34,12 +34,16 @@ The [original assignment](../docs/team/03_PERSON_3_ML_RETRIEVAL.md) and
 - Joel: private service networking, model cache, resource requirements, and
   shared Compose/CI integration. The Compose file here is standalone only.
 
-Steps 1–5 implement embeddings, vector persistence, and local image/video indexing,
-but not HTTP search,
-production job processing, or S3. The local V300 migration assumes UUID asset
-IDs until teammate 2 confirms the production FK contract. Unavailable features must not return mock successful responses. Readiness
-will remain 503 until real dependencies are wired and checked in later steps.
+Steps 1–7 implement local embeddings/indexing, vector persistence, a leased
+worker, and HTTP search. The local V300 migration assumes UUID asset IDs until
+teammate 2 confirms the FK contract. `ml_dev` job/status fixtures are separate
+from production metadata; no V2xx table has been changed. Completion uses the
+transaction-aware vector helper to commit vectors/job/local READY atomically.
 
-Image/video preparation returns records without writing, so the step 6 worker
-can validate its claim and commit vectors/status in one transaction. The local
-CLI persists vectors only; it does not claim jobs or mark production assets READY.
+Readiness now checks a loaded model and the 512-dimensional vector schema/
+database. Dependency failures are 503. Invalid inputs are 400, including CLIP
+queries over its 77-token budget. Local defaults (limit 20, max 100, query 1,000
+characters) and error envelope remain provisional team integration decisions.
+Similar media, S3 retrieval, production jobs/statuses, shared deployment/CI,
+and the embed-media HTTP handoff remain future work. The browser still calls
+Spring Boot only. See LOCAL_WORKFLOW.md for verified commands and boundaries.

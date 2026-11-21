@@ -109,7 +109,7 @@ services:
     environment: *app-environment
     volumes:
       - model-cache:/data/models
-      - ./data/media:/data/media:ro
+      - ./data/media:/data/media:rw
     networks: [ml]
 
 networks:

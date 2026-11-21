@@ -1,9 +1,11 @@
 # MediaMesh ML service
 
-Steps 1–5: FastAPI foundation, pinned CLIP embeddings, PostgreSQL vector
-persistence, and local image/video indexing. HTTP search and automatic job
-processing come later. See the [original assignment](../docs/team/03_PERSON_3_ML_RETRIEVAL.md)
-and [contract notes](CONTRACT_NOTES.md).
+Steps 1–7 are implemented locally: CLIP embeddings, vector persistence,
+image/video indexing, a leased background job worker, and the original internal
+semantic-search API. Start with [LOCAL_WORKFLOW.md](LOCAL_WORKFLOW.md) for the
+complete Docker queue → worker → HTTP search demonstration, including retry.
+See the [original assignment](../docs/team/03_PERSON_3_ML_RETRIEVAL.md) and
+[contract notes](CONTRACT_NOTES.md) for integration boundaries.
 
 ## Start locally
 
@@ -22,27 +24,30 @@ curl --fail http://127.0.0.1:8001/health
 
 The API binds to localhost port 8001; PostgreSQL has no host port. API docs:
 `http://127.0.0.1:8001/docs`. `/health` returns `{"status":"ok"}`. Change
-`ML_API_PORT` in `.env` if needed. `/ready` deliberately returns 503 until API
-model/schema dependencies are wired in step 7. Docker health checks liveness.
-Search/similar/embed-media HTTP routes are unimplemented (404), not mock results.
+`ML_API_PORT` in `.env` if needed. `/ready` returns 200 only when the model and vector schema/database are available;
+otherwise 503. Docker health checks liveness. `/internal/search` is implemented.
+Similar/embed-media HTTP routes remain reserved (404). Apply migrations and
+cache the model as described in LOCAL_WORKFLOW.md before expecting readiness.
 
 ## Download samples and evaluate CLIP (step 2)
 
 ```bash
-docker compose run --rm -v "$PWD/data/media:/data/media" ml-tools python -m mediamesh_ml.dataset
+docker compose run --rm ml-tools python -m mediamesh_ml.dataset
 docker compose run --rm -v "$PWD/outputs:/outputs" ml-tools python -m mediamesh_ml.evaluate --output /outputs/evaluation.json
 # Repeat after caching the model, with model network access disabled.
 ML_MODEL_OFFLINE=true docker compose run --rm -v "$PWD/outputs:/outputs" ml-tools python -m mediamesh_ml.evaluate --output /outputs/evaluation-offline.json
 ```
 
-The model downloads explicitly on first evaluation, never on API health/startup.
+The explicit embedding/evaluation commands populate the model cache. API and
+worker startup load their models and may download weights unless offline mode is
+enabled; health requests themselves never trigger downloads.
 Images and text share 512-dimensional normalized vectors. No training required.
 [MODEL.md](MODEL.md) records revision, performance, memory, and limitations. The
 [dataset documentation](evaluation/README.md), [manifest](evaluation/manifest.json),
 and [attribution](evaluation/ATTRIBUTION.md) cover 25 reviewed Commons images,
 licenses, checksums, and seven fixed queries. Binaries stay outside Git. Downloads
 fail on checksum mismatch. [baseline.json](evaluation/baseline.json) records the
-initial real offline run. Evaluation is in-memory, separate from the future API.
+initial real offline run. Evaluation is in-memory, separate from the HTTP API.
 
 ## Apply local vector migrations (step 3)
 
@@ -75,7 +80,7 @@ removal, and returns exact cosine matches scoped to model version. Parent-row
 locks serialize concurrent replacement/deletion. Its transaction-aware helper
 can later participate in atomic worker completion. SQL enforces 512 dimensions,
 unit norm, valid timestamps, FK/cascade, and uniqueness including null image
-timestamps. Best-frame-per-asset ranking comes in step 7. Approximate vector
+timestamps. HTTP search uses best-frame-per-asset ranking before the result limit. Approximate vector
 indexing awaits scale measurements; model and unique/FK indexes exist now.
 Connection, statement, and lock timeouts bound database operations.
 
@@ -83,8 +88,8 @@ Connection, statement, and lock timeouts bound database operations.
 
 Index once for each new or changed asset. Searching or restarting containers does
 not require reindexing; vectors persist in PostgreSQL. There is no directory
-watcher. The step 6 worker will automate job processing; backend/S3 integration
-will enqueue jobs after uploads. Keep containers running while using the service.
+watcher. The step 6 worker now automates queued jobs; backend/S3 integration
+will enqueue jobs after uploads. See LOCAL_WORKFLOW.md. Keep containers running while using the service.
 Rebuild only after code/dependency changes. Model weights stay cached, although
 each new inference process loads them into memory.
 
@@ -101,7 +106,7 @@ docker compose run --rm ml-tools python dev/register_asset.py 00000000-0000-4000
 docker compose run --rm ml-tools python -m mediamesh_ml.index --asset-id 00000000-0000-4000-8000-000000000401 --reference elephant-02.jpg --media-type image
 
 # Download the two credited NPS wildlife clips locally.
-docker compose run --rm -v "$PWD/data/media:/data/media" ml-tools python -m mediamesh_ml.dataset --manifest evaluation/video-manifest.json
+docker compose run --rm ml-tools python -m mediamesh_ml.dataset --manifest evaluation/video-manifest.json
 
 docker compose run --rm ml-tools python dev/register_asset.py 00000000-0000-4000-8000-000000000501
 docker compose run --rm ml-tools python -m mediamesh_ml.index --asset-id 00000000-0000-4000-8000-000000000501 --reference video-bison.mp4 --media-type video
@@ -110,11 +115,12 @@ docker compose run --rm ml-tools python -m mediamesh_ml.index --asset-id 0000000
 # Explicitly remove every model version for an asset when needed:
 docker compose run --rm ml-tools python -m mediamesh_ml.index --asset-id 00000000-0000-4000-8000-000000000401 --remove
 
-# Offline text-to-video evaluation, separate from the future search API.
+# Offline text-to-video evaluation, separate from the HTTP search API.
 ML_MODEL_OFFLINE=true docker compose run --rm -v "$PWD/outputs:/outputs" ml-tools python -m mediamesh_ml.evaluate_video --output /outputs/video-evaluation.json
 ```
 
-Paths are relative to the read-only `/data/media` mount (host `data/media/`). The
+Paths are relative to `/data/media` (host `data/media/`); the worker mounts it
+read-only while tools can download/create fixtures. The
 local adapter rejects path escapes, external symlinks, URLs, nonfiles, empty files,
 and files over `ML_MEDIA_MAX_BYTES` (100 MB by default). JPEG/PNG/WebP contents
 are validated; animated images are unsupported. Failed decode/inference leaves
@@ -167,15 +173,21 @@ normalization, and elephant-vs-lion retrieval through pgvector.
 
 ## Worker and integration
 
+Initialize the local queue before starting its daemon:
+
 ```bash
-docker compose --profile worker run --rm ml-worker
+docker compose run --rm ml-tools python -m mediamesh_ml.jobs init
+docker compose --profile worker up -d ml-worker
 ```
 
-The scaffold intentionally exits 1 until step 6; no jobs are claimed. S3, real
-backend jobs/statuses, and similar-media recommendations remain future work.
-Internal invalid-input handling maps to 400. The error envelope awaits team
-agreement. Spring Boot owns authorization, filtering, and enrichment; browsers
-will not call Python directly in the integrated application.
+The worker reuses one model across jobs, claims safely, renews leases, retries
+transient failures, and atomically commits vectors and local READY status. Use
+[LOCAL_WORKFLOW.md](LOCAL_WORKFLOW.md) for enqueue/status commands and the retry
+demo. This is a local adapter in `ml_dev`, not teammate 2's production job schema.
+S3 and backend lifecycle integration remain future work, as do similar-media
+recommendations. Invalid requests return 400; dependency failures return 503.
+The error envelope/default limits await team agreement. Spring Boot owns public
+authorization, metadata/status filtering, and result enrichment.
 
 ## Configuration, storage, and shutdown
 
@@ -186,14 +198,14 @@ credentials in repr/validation errors. Logs use stdout/stderr.
 
 API and worker use the same runtime image; tools add evaluation, fixtures, pytest,
 and Ruff. Rebuild after source/dependency changes. The model-cache named volume
-is writable by the non-root application user. Sample processing mounts media
-read-only; the download command explicitly overrides that mount as writable.
+is writable by the non-root application user. API and worker mount media
+read-only; the tools container mounts it writable for downloads and fixtures.
 Generated reports stay in ignored `outputs/`. Separate inference processes each
 need model memory. CPU is the local baseline, including macOS Docker.
 
 ```bash
 docker compose logs --tail 100 ml-api postgres
-docker compose down
+docker compose --profile worker down
 docker compose up -d --wait postgres ml-api
 docker compose --profile test stop postgres-test
 ```

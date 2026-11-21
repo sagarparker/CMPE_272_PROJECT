@@ -86,6 +86,8 @@ class VectorRepository(Protocol):
 
 
 class JobStore(Protocol):
+    def renew(self, job: ClaimedJob) -> bool: ...
+
     def claim(self) -> ClaimedJob | None: ...
 
     def complete(self, job: ClaimedJob, records: Sequence[VectorRecord]) -> None:

@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from PIL import UnidentifiedImageError
 
 from mediamesh_ml.config import Settings
+from mediamesh_ml.contracts import JobStore
 from mediamesh_ml.embeddings import ClipEngine
 from mediamesh_ml.indexing import IndexingService
 from mediamesh_ml.jobs import LocalJobStore, StaleClaim
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class Worker:
-    def __init__(self, store, indexer, settings: Settings):
+    def __init__(self, store: JobStore, indexer: IndexingService, settings: Settings):
         self.store = store
         self.indexer = indexer
         self.settings = settings

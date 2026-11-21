@@ -24,7 +24,7 @@ After building the tools image, run from `ml-service/`:
 
 ```bash
 mkdir -p data/media outputs
-docker compose run --rm -v "$PWD/data/media:/data/media" ml-tools python -m mediamesh_ml.dataset
+docker compose run --rm ml-tools python -m mediamesh_ml.dataset
 docker compose run --rm -v "$PWD/outputs:/outputs" ml-tools python -m mediamesh_ml.evaluate --output /outputs/evaluation.json
 ```
 

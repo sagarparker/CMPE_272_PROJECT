@@ -95,3 +95,13 @@ class ClipEngine:
                 for image in images:
                     image.close()
         return vectors
+
+
+if __name__ == "__main__":
+    import json
+
+    engine = ClipEngine(Settings())
+    engine.load()
+    print(
+        json.dumps({"modelVersion": engine.model_version, "dimensions": engine.identity.dimensions})
+    )
