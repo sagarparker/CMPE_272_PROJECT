@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     worker_poll_seconds: float = Field(default=2.0, gt=0)
     job_max_attempts: int = Field(default=3, ge=1, le=20)
     video_max_frames: int = Field(default=8, ge=1, le=100)
+    video_max_duration_seconds: float = Field(default=180, gt=0)
+    video_max_pixels: int = Field(default=8_294_400, ge=1)
+    video_temp_root: Path = Path("/tmp")
     video_timeout_seconds: float = Field(default=120, gt=0)
 
     def model_post_init(self, __context: object) -> None:
