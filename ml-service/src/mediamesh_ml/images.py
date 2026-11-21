@@ -10,6 +10,10 @@ def prepare_image(path: Path, *, max_pixels: int = 20_000_000) -> Image.Image:
     with warnings.catch_warnings():
         warnings.simplefilter("error", Image.DecompressionBombWarning)
         with Image.open(path) as source:
+            if source.format not in {"JPEG", "PNG", "WEBP"}:
+                raise ValueError("Supported image formats are JPEG, PNG, and WebP")
+            if getattr(source, "n_frames", 1) != 1:
+                raise ValueError("Animated images are not supported")
             if source.width * source.height > max_pixels:
                 raise ValueError("Image exceeds pixel limit")
             source.load()  # Force decoding while the underlying file is open.

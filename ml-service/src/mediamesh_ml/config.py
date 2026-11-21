@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     db_connect_timeout_seconds: int = Field(default=5, ge=1, le=60)
     db_statement_timeout_ms: int = Field(default=15000, ge=1, le=300000)
     media_root: Path = Path("/data/media")
+    media_max_bytes: int = Field(default=100_000_000, ge=1)
     model_cache: Path = Path("/data/models")
     model_name: str = Field(default="sentence-transformers/clip-ViT-B-32", min_length=1)
     model_revision: str = "327ab6726d33c0e22f920c83f2ff9e4bd38ca37f"
