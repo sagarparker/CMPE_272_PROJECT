@@ -15,7 +15,10 @@ class Settings(BaseSettings):
     media_root: Path = Path("/data/media")
     model_cache: Path = Path("/data/models")
     model_name: str = Field(default="sentence-transformers/clip-ViT-B-32", min_length=1)
-    model_revision: str | None = None  # Pin after the step 2 evaluation.
+    model_revision: str = "327ab6726d33c0e22f920c83f2ff9e4bd38ca37f"
+    embedding_dimensions: int = Field(default=512, ge=1)
+    embedding_batch_size: int = Field(default=8, ge=1, le=128)
+    model_offline: bool = False
     device: str = "cpu"
     log_level: str = "INFO"
     worker_poll_seconds: float = Field(default=2.0, gt=0)
