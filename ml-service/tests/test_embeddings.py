@@ -15,3 +15,11 @@ def test_model_identity_is_pinned_and_construction_is_lazy():
 def test_mutable_model_revision_is_rejected():
     with pytest.raises(ValueError, match="immutable"):
         ClipEngine(Settings(model_revision="main"))
+
+
+def test_empty_inputs_do_not_load_model():
+    engine = ClipEngine(Settings())
+    assert engine.encode_images([]) == []
+    with pytest.raises(ValueError, match="blank"):
+        engine.encode_text("  ")
+    assert "model" not in engine.__dict__

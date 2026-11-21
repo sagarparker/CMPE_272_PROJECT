@@ -45,3 +45,46 @@ class ClipEngine:
     def load(self) -> None:
         """Explicit download/load step; may be run offline against a populated cache."""
         _ = self.model
+
+    def _encode(self, inputs):
+        import numpy as np
+        import torch
+
+        with torch.inference_mode():
+            output = self.model.encode(
+                inputs,
+                batch_size=self.settings.embedding_batch_size,
+                convert_to_numpy=True,
+                normalize_embeddings=True,
+                show_progress_bar=False,
+            )
+        output = np.asarray(output, dtype=np.float32)
+        if output.shape != (len(inputs), self.identity.dimensions):
+            raise ValueError("Unexpected embedding shape")
+        if not np.isfinite(output).all():
+            raise ValueError("Non-finite embedding")
+        norms = np.linalg.norm(output, axis=1)
+        if not np.allclose(norms, 1.0, atol=1e-4):
+            raise ValueError("Expected unit-normalized embeddings")
+        return [tuple(float(value) for value in row) for row in output]
+
+    def encode_text(self, text: str):
+        if not text.strip():
+            raise ValueError("Query must not be blank")
+        return self._encode([text])[0]
+
+    def encode_images(self, paths):
+        from mediamesh_ml.images import prepare_image
+
+        vectors = []
+        batch_size = self.settings.embedding_batch_size
+        for start in range(0, len(paths), batch_size):
+            images = []
+            try:
+                for path in paths[start : start + batch_size]:
+                    images.append(prepare_image(path))
+                vectors.extend(self._encode(images))
+            finally:
+                for image in images:
+                    image.close()
+        return vectors
