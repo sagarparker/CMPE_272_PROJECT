@@ -1,0 +1,66 @@
+{
+  "labeling": "Manually reviewed image content before model ranking; small demo, not held-out benchmark.",
+  "queries": [
+    {
+      "query": "elephants standing or bathing in water",
+      "relevant_ids": [
+        "elephant-01",
+        "elephant-02",
+        "elephant-03",
+        "elephant-04",
+        "elephant-05"
+      ]
+    },
+    {
+      "query": "lions resting in grass",
+      "relevant_ids": [
+        "lion-01",
+        "lion-02",
+        "lion-03",
+        "lion-04",
+        "lion-05"
+      ]
+    },
+    {
+      "query": "zebras standing or grazing in grass",
+      "relevant_ids": [
+        "zebra-01",
+        "zebra-02",
+        "zebra-03",
+        "zebra-04",
+        "zebra-05"
+      ]
+    },
+    {
+      "query": "giraffes near trees",
+      "relevant_ids": [
+        "giraffe-01",
+        "giraffe-02",
+        "giraffe-03",
+        "giraffe-04",
+        "giraffe-05"
+      ]
+    },
+    {
+      "query": "birds flying over water",
+      "relevant_ids": [
+        "bird-01",
+        "bird-02",
+        "bird-03",
+        "bird-04"
+      ]
+    },
+    {
+      "query": "a giraffe silhouette at sunset",
+      "relevant_ids": [
+        "giraffe-03"
+      ]
+    },
+    {
+      "query": "a reflection of a flying bird in water",
+      "relevant_ids": [
+        "bird-05"
+      ]
+    }
+  ]
+}
