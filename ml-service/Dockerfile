@@ -29,4 +29,5 @@ RUN uv sync --no-cache --locked --no-editable
 COPY --chown=app:app tests ./tests
 COPY --chown=app:app evaluation ./evaluation
 COPY --chown=app:app dev ./dev
+COPY --chown=app:app dev-ui ./dev-ui
 CMD ["pytest"]

@@ -97,6 +97,30 @@ services:
       postgres:
         condition: service_healthy
 
+  ml-dev-ui:
+    image: mediamesh-ml-tools:local
+    profiles: [ui]
+    init: true
+    environment:
+      <<: *app-environment
+      ML_DEV_API_URL: http://ml-api:8000
+    command: [uvicorn, "mediamesh_ml.dev_ui:create_app", --factory, --host, "0.0.0.0", --port, "8080"]
+    ports:
+      - "127.0.0.1:${ML_DEV_UI_PORT:-8002}:8080"
+    volumes:
+      - ./data/media:/data/media:rw
+    networks: [ml]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ml-api:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+
   ml-tools:
     image: mediamesh-ml-tools:local
     build:

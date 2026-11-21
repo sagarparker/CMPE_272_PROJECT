@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>MediaMesh · Local ML test</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+<main>
+  <header>
+    <h1>MediaMesh · Local ML test</h1>
+    <p>A simple console for indexing, background jobs, and semantic search.</p>
+    <div class="bar"><span id="health">Checking services…</span><button id="refresh" type="button">Refresh</button></div>
+    <p class="muted">Local development only. Uses fixture assets and the ML service; no SSO, Spring Boot, or S3.</p>
+  </header>
+  <div id="notice" role="status" aria-live="polite"></div>
+  <div class="columns">
+    <section>
+      <h2>1. Add media</h2>
+      <form id="upload-form">
+        <label for="file">Upload an image or short video</label>
+        <input id="file" type="file" accept=".jpg,.jpeg,.png,.webp,.mp4,.mov,.webm,.mkv" required>
+        <label for="kind">Media type</label>
+        <select id="kind"><option value="image">Image</option><option value="video">Video</option></select>
+        <button type="submit">Upload &amp; index</button>
+      </form>
+      <p class="muted">Files stay in local Docker-mounted storage. The worker indexes them automatically.</p>
+      <hr>
+      <label for="sample">Or use a downloaded sample</label>
+      <select id="sample"><option value="">Loading samples…</option></select>
+      <p id="credit" class="muted"></p>
+      <div class="actions">
+        <button id="index-sample" type="button">Index selected sample</button>
+        <button id="index-all" type="button" class="secondary">Index all samples</button>
+      </div>
+    </section>
+    <section>
+      <h2>2. Search</h2>
+      <form id="search-form">
+        <label for="query">Describe an image or video moment</label>
+        <input id="query" placeholder="elephants drinking water" required maxlength="1000">
+        <label for="limit">Result limit</label>
+        <input id="limit" type="number" min="1" max="100" value="10" required>
+        <button type="submit">Search</button>
+      </form>
+      <div class="examples">
+        <button type="button" data-query="elephants drinking water">Elephants</button>
+        <button type="button" data-query="a herd of bison grazing in a green valley">Bison video</button>
+        <button type="button" data-query="a bear walking through snow">Bear video</button>
+      </div>
+      <p class="muted">Index first, then search. Videos show the best frame time. Scores are similarities, not probabilities.</p>
+    </section>
+  </div>
+  <section>
+    <h2>Results</h2>
+    <p id="result-status" class="muted">Run a search to see images and video moments.</p>
+    <div id="results" class="results"></div>
+    <details><summary>Raw search response</summary><pre id="raw">No request yet.</pre></details>
+  </section>
+  <section>
+    <div class="bar"><h2>Jobs</h2><button id="retry-demo" type="button" class="secondary">Test a failed job &amp; retry</button></div>
+    <p class="muted">Refreshes every two seconds. The retry test restores a missing file after its first failure; look for SUCCEEDED with 2 attempts.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Media</th><th>Status</th><th>Attempts</th><th>Last error</th><th>Job ID</th><th>Action</th></tr></thead>
+      <tbody id="jobs"><tr><td colspan="6">Loading jobs…</td></tr></tbody>
+    </table></div>
+  </section>
+  <section>
+    <h2>Local assets</h2>
+    <p class="muted">Reindex replaces embeddings. Remove index keeps the original file and job history.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>File</th><th>Type</th><th>State</th><th>Vectors</th><th>Actions</th></tr></thead>
+      <tbody id="assets"><tr><td colspan="5">Loading assets…</td></tr></tbody>
+    </table></div>
+  </section>
+</main>
+</body>
+</html>

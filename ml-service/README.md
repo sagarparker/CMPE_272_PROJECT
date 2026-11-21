@@ -7,6 +7,20 @@ complete Docker queue → worker → HTTP search demonstration, including retry.
 See the [original assignment](../docs/team/03_PERSON_3_ML_RETRIEVAL.md) and
 [contract notes](CONTRACT_NOTES.md) for integration boundaries.
 
+## Optional browser test console
+
+A plain local page can upload/index images and videos, queue samples, show jobs
+and retries, search with media previews, and reindex/remove embeddings.
+
+```bash
+docker compose build ml-api ml-tools
+ML_MODEL_OFFLINE=true docker compose --profile worker --profile ui up -d --wait ml-api ml-worker ml-dev-ui
+```
+
+Open **http://127.0.0.1:8002**. See [dev-ui/README.md](dev-ui/README.md).
+Complete the local database/model setup below first. This is a separate test
+app; it does not change the original ML API or the production React frontend.
+
 ## Start locally
 
 Requires Docker with Compose/BuildKit named-context support (current Docker

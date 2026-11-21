@@ -34,6 +34,17 @@ database readiness. A failed model load leaves readiness/search at 503; fix the
 cache/config and restart the API. A temporary database outage can recover without
 a model reload. Containers need to remain running for automatic job processing.
 
+## Optional browser console
+
+```bash
+ML_MODEL_OFFLINE=true docker compose --profile worker --profile ui up -d --wait ml-api ml-worker ml-dev-ui
+```
+
+Open **http://127.0.0.1:8002** to upload/index files, index samples, inspect jobs,
+run the retry test, and search with image/video previews. The same worker and
+ML API perform the work. See [dev-ui/README.md](dev-ui/README.md). The console is
+local-only and does not implement the future Spring Boot/React integration.
+
 ## Repeatable demonstration
 
 ```bash
@@ -149,7 +160,7 @@ docker compose run --rm ml-tools ruff format --check .
 docker compose run --rm ml-tools uv lock --check
 docker compose --profile worker logs --tail 100 ml-worker ml-api
 docker compose --profile test stop postgres-test
-docker compose --profile worker down
+docker compose --profile worker --profile ui down
 ```
 
 The test database is separate and ephemeral. Destructive fixtures refuse the
