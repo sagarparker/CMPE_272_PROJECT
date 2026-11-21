@@ -8,14 +8,18 @@ usage() {
   cat <<'USAGE'
 Usage: ./ml-service/manage.sh COMMAND
 
-  start             Build if needed, initialize local fixtures, and start all services
+  start             Start PostgreSQL, ML API, and worker only; stop the test frontend
+  start --with-ui   Also build and start the optional local test frontend
+  start SERVICE     Start one service plus its required dependencies
   stop              Stop the frontend, worker, API, and database; preserve all data
-  restart           Stop and start the stack
+  stop SERVICE      Stop only the named service
+  restart [--with-ui]  Stop the stack and start the selected mode
+  restart SERVICE   Restart only the named service (and rebuild its image)
   status            Show running and stopped service containers
   logs [SERVICE]    Follow recent logs (Ctrl+C exits logs, not the services)
   help              Show this help
 
-Services: ml-dev-ui, ml-worker, ml-api, postgres
+Core services: ml-worker, ml-api, postgres. Optional testing service: ml-dev-ui.
 The script works from any directory and uses ml-service/.env if it exists.
 First start may download Docker images, Python dependencies, and model weights.
 It does not download samples or reindex existing media.
@@ -23,9 +27,27 @@ USAGE
 }
 
 command_name="${1:-help}"
+with_ui=false
+target_service=""
+select_service() {
+  case "$1" in
+    ml-api|ml-worker|ml-dev-ui|postgres) target_service="$1" ;;
+    *) printf 'Unknown service: %s\n' "$1" >&2; exit 2 ;;
+  esac
+}
 case "$command_name" in
   help|-h|--help) usage; exit 0 ;;
-  start|stop|restart|status) [[ $# -eq 1 ]] || { usage >&2; exit 2; } ;;
+  start|restart)
+    [[ $# -le 2 ]] || { usage >&2; exit 2; }
+    if [[ $# -eq 2 ]]; then
+      if [[ "$2" == --with-ui ]]; then with_ui=true; else select_service "$2"; fi
+    fi
+    ;;
+  stop)
+    [[ $# -le 2 ]] || { usage >&2; exit 2; }
+    [[ $# -eq 1 ]] || select_service "$2"
+    ;;
+  status) [[ $# -eq 1 ]] || { usage >&2; exit 2; } ;;
   logs)
     [[ $# -le 2 ]] || { usage >&2; exit 2; }
     case "${2:-all}" in
@@ -51,30 +73,67 @@ trap 'printf "\nOperation failed. Inspect service logs with: %s/manage.sh logs\n
 
 show_urls() {
   local address
-  address="$(compose port ml-dev-ui 8080 2>/dev/null || true)"
-  [[ -z "$address" ]] || printf 'Frontend: http://%s\n' "$address"
+  if [[ "$with_ui" == true || "$command_name" == status ]]; then
+    address="$(compose port ml-dev-ui 8080 2>/dev/null || true)"
+    [[ -z "$address" ]] || printf 'Test frontend: http://%s\n' "$address"
+  fi
   address="$(compose port ml-api 8000 2>/dev/null || true)"
   [[ -z "$address" ]] || printf 'API docs: http://%s/docs\n' "$address"
   return 0
 }
 
-start_stack() {
-  mkdir -p data/media outputs
+prepare_runtime() {
+  mkdir -p data/media
   printf 'Building application images (unchanged layers are reused)...\n'
-  compose build ml-api ml-tools
+  if [[ "$with_ui" == true || "$target_service" == ml-dev-ui ]]; then
+    compose build ml-api ml-tools
+  else
+    compose build ml-api
+  fi
   compose up -d --wait --wait-timeout 120 postgres
-  compose run --rm --no-deps ml-tools python -m mediamesh_ml.migrate --local-fixture
-  compose run --rm --no-deps ml-tools python -m mediamesh_ml.jobs init
+  # The local worker still requires these guarded SQL fixtures until production
+  # backend integration. Use the runtime image, not the optional testing toolbox.
+  compose run --rm --no-deps -v "$SERVICE_DIR/dev:/app/dev:ro" \
+    ml-api python -m mediamesh_ml.migrate --local-fixture
+  compose run --rm --no-deps -v "$SERVICE_DIR/dev:/app/dev:ro" \
+    ml-api python -m mediamesh_ml.jobs init
   printf 'Loading the pinned model into its persistent cache...\n'
-  compose run --rm --no-deps ml-tools python -m mediamesh_ml.embeddings
-  compose up -d --wait --wait-timeout 120 ml-api ml-worker ml-dev-ui
+  compose run --rm --no-deps ml-api python -m mediamesh_ml.embeddings
+}
+
+check_api() {
   compose exec -T ml-api python -c \
     "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready', timeout=10)"
+}
+
+start_stack() {
+  if [[ -n "$target_service" ]]; then
+    if [[ "$target_service" != postgres ]]; then prepare_runtime; fi
+    compose up -d --wait --wait-timeout 120 "$target_service"
+    if [[ "$target_service" == ml-api || "$target_service" == ml-dev-ui ]]; then check_api; fi
+    printf '\nStarted %s and its required dependencies.\n' "$target_service"
+    if [[ "$target_service" == ml-dev-ui ]]; then with_ui=true; fi
+    show_urls
+    return
+  fi
+  if [[ "$with_ui" == false ]]; then compose stop ml-dev-ui; fi
+  prepare_runtime
+  if [[ "$with_ui" == true ]]; then
+    compose up -d --wait --wait-timeout 120 ml-api ml-worker ml-dev-ui
+  else
+    compose up -d --wait --wait-timeout 120 ml-api ml-worker
+  fi
+  check_api
   printf '\nLocal ML stack is ready.\n'
   show_urls
 }
 
 stop_stack() {
+  if [[ -n "$target_service" ]]; then
+    compose stop "$target_service"
+    printf 'Stopped %s. Stored data is preserved.\n' "$target_service"
+    return
+  fi
   printf 'Stopping the frontend, worker, and API; allowing the worker to drain...\n'
   compose stop ml-dev-ui ml-worker ml-api
   # Stop the database only after the worker has finished or its grace period elapsed.
@@ -92,7 +151,7 @@ case "$command_name" in
     if [[ "${2:-all}" != all ]]; then
       compose logs --tail 100 --follow "$2"
     else
-      compose logs --tail 100 --follow ml-dev-ui ml-worker ml-api postgres
+      compose logs --tail 100 --follow ml-worker ml-api postgres
     fi
     ;;
 esac

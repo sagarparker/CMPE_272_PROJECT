@@ -9,11 +9,13 @@ untouched and the original ML `/internal/search` request/response is unchanged.
 From the repository root:
 
 ```bash
-./ml-service/manage.sh start
+./ml-service/manage.sh start --with-ui
 ./ml-service/manage.sh stop
 ```
 
-The script also supports `restart`, `status`, and `logs [SERVICE]`. It waits for
+Use `restart --with-ui` to restart with the frontend. Plain `start`/`restart`
+selects core ML-only mode and stops the test UI. The script also supports
+`status`, `logs [SERVICE]`, and named `start SERVICE` / `stop SERVICE` controls. It waits for
 readiness and preserves stored data when stopped. Docker Desktop must be running.
 See [LOCAL_WORKFLOW.md](../LOCAL_WORKFLOW.md) for setup details and all commands.
 
