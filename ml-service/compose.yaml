@@ -7,6 +7,8 @@ x-app-environment: &app-environment
   HF_HOME: /data/models
   ML_DEVICE: ${ML_DEVICE:-cpu}
   ML_LOG_LEVEL: ${ML_LOG_LEVEL:-INFO}
+  ML_DB_CONNECT_TIMEOUT_SECONDS: ${ML_DB_CONNECT_TIMEOUT_SECONDS:-5}
+  ML_DB_STATEMENT_TIMEOUT_MS: ${ML_DB_STATEMENT_TIMEOUT_MS:-15000}
   ML_MODEL_NAME: ${ML_MODEL_NAME:-sentence-transformers/clip-ViT-B-32}
   ML_MODEL_REVISION: ${ML_MODEL_REVISION:-327ab6726d33c0e22f920c83f2ff9e4bd38ca37f}
   ML_EMBEDDING_DIMENSIONS: 512
@@ -45,6 +47,22 @@ services:
       timeout: 3s
       retries: 20
       start_period: 5s
+
+  postgres-test:
+    image: pgvector/pgvector:pg17-bookworm@sha256:b513c48566e4777cd3370451400000c78eda6a08131d68f4c31d4a76f27bd8fd
+    profiles: [test]
+    environment:
+      POSTGRES_USER: mediamesh
+      POSTGRES_PASSWORD: local-test-only
+      POSTGRES_DB: mediamesh_test
+    tmpfs:
+      - /var/lib/postgresql/data
+    networks: [ml]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U mediamesh -d mediamesh_test']
+      interval: 2s
+      timeout: 3s
+      retries: 20
 
   ml-api:
     <<: *runtime

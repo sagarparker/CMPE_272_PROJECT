@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     database_url: SecretStr = SecretStr(
         "postgresql://mediamesh:local-development-only@postgres:5432/mediamesh"
     )
+    db_connect_timeout_seconds: int = Field(default=5, ge=1, le=60)
+    db_statement_timeout_ms: int = Field(default=15000, ge=1, le=300000)
     media_root: Path = Path("/data/media")
     model_cache: Path = Path("/data/models")
     model_name: str = Field(default="sentence-transformers/clip-ViT-B-32", min_length=1)

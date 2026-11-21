@@ -7,3 +7,5 @@
 !tests/**
 !evaluation/
 !evaluation/**
+!dev/
+!dev/**

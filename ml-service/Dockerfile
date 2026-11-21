@@ -23,4 +23,5 @@ FROM base AS tools
 RUN uv sync --locked --no-editable
 COPY --chown=app:app tests ./tests
 COPY --chown=app:app evaluation ./evaluation
+COPY --chown=app:app dev ./dev
 CMD ["pytest"]
