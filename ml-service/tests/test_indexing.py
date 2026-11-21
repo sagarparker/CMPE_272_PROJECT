@@ -79,3 +79,21 @@ def test_video_preparation_cleans_up_even_if_encoding_fails(tmp_path):
         service.index_video(uuid4(), "video.webm")
     assert store.records == ["previous vectors"]
     assert not frame_path.exists()
+
+
+def test_empty_frame_set_cannot_erase_previous_vectors(tmp_path):
+    from contextlib import contextmanager
+
+    (tmp_path / "video.mp4").write_bytes(b"placeholder")
+
+    class EmptySampler:
+        @contextmanager
+        def extract(self, path):
+            yield []
+
+    store = Store()
+    store.records = ["previous vectors"]
+    service = IndexingService(Engine(), LocalMediaSource(tmp_path), store, EmptySampler())
+    with pytest.raises(ValueError, match="no frames"):
+        service.index_video(uuid4(), "video.mp4")
+    assert store.records == ["previous vectors"]

@@ -1,7 +1,7 @@
 # MediaMesh ML service
 
-Steps 1–3: FastAPI foundation, pinned CLIP embeddings and wildlife evaluation,
-and PostgreSQL vector persistence. HTTP search, indexing pipelines, and job
+Steps 1–5: FastAPI foundation, pinned CLIP embeddings, PostgreSQL vector
+persistence, and local image/video indexing. HTTP search and automatic job
 processing come later. See the [original assignment](../docs/team/03_PERSON_3_ML_RETRIEVAL.md)
 and [contract notes](CONTRACT_NOTES.md).
 
@@ -79,6 +79,65 @@ timestamps. Best-frame-per-asset ranking comes in step 7. Approximate vector
 indexing awaits scale measurements; model and unique/FK indexes exist now.
 Connection, statement, and lock timeouts bound database operations.
 
+## Index new images and videos (steps 4–5)
+
+Index once for each new or changed asset. Searching or restarting containers does
+not require reindexing; vectors persist in PostgreSQL. There is no directory
+watcher. The step 6 worker will automate job processing; backend/S3 integration
+will enqueue jobs after uploads. Keep containers running while using the service.
+Rebuild only after code/dependency changes. Model weights stay cached, although
+each new inference process loads them into memory.
+
+For the standalone local fixture only, register an asset ID before indexing it.
+Production assets will already exist in teammate 2's catalog. The registration
+script refuses a production asset schema and never creates upload/status data.
+
+```bash
+# Prepare local prerequisites if not already applied.
+docker compose run --rm ml-tools python -m mediamesh_ml.migrate --local-fixture
+
+# Existing downloaded photograph: register once, then index.
+docker compose run --rm ml-tools python dev/register_asset.py 00000000-0000-4000-8000-000000000401
+docker compose run --rm ml-tools python -m mediamesh_ml.index --asset-id 00000000-0000-4000-8000-000000000401 --reference elephant-02.jpg --media-type image
+
+# Download the two credited NPS wildlife clips locally.
+docker compose run --rm -v "$PWD/data/media:/data/media" ml-tools python -m mediamesh_ml.dataset --manifest evaluation/video-manifest.json
+
+docker compose run --rm ml-tools python dev/register_asset.py 00000000-0000-4000-8000-000000000501
+docker compose run --rm ml-tools python -m mediamesh_ml.index --asset-id 00000000-0000-4000-8000-000000000501 --reference video-bison.mp4 --media-type video
+
+# Repeating either indexing command replaces its asset/model set, without duplicates.
+# Explicitly remove every model version for an asset when needed:
+docker compose run --rm ml-tools python -m mediamesh_ml.index --asset-id 00000000-0000-4000-8000-000000000401 --remove
+
+# Offline text-to-video evaluation, separate from the future search API.
+ML_MODEL_OFFLINE=true docker compose run --rm -v "$PWD/outputs:/outputs" ml-tools python -m mediamesh_ml.evaluate_video --output /outputs/video-evaluation.json
+```
+
+Paths are relative to the read-only `/data/media` mount (host `data/media/`). The
+local adapter rejects path escapes, external symlinks, URLs, nonfiles, empty files,
+and files over `ML_MEDIA_MAX_BYTES` (100 MB by default). JPEG/PNG/WebP contents
+are validated; animated images are unsupported. Failed decode/inference leaves
+the previous vector set intact. Active model versions are replaced atomically;
+other versions remain isolated until explicitly removed.
+
+Video containers supported initially: MP4/MOV and WebM/Matroska. FFmpeg is
+restricted to file/pipe protocols and those demuxers. ffprobe verifies video
+streams, duration (default max 180 seconds), and resolution (default max 4K pixel
+count). `ML_VIDEO_MAX_FRAMES` defaults to 8; short clips may yield fewer decoded
+frames. Sampling is uniform in time, not scene-change detection. Stored timestamps
+come from decoded frame PTS relative to the first frame, not estimated frame
+numbers. Frames are scaled to fit 1280x720, encoded in batches, and removed on
+success or failure. Probe/extraction share `ML_VIDEO_TIMEOUT_SECONDS` (120 seconds
+by default); model inference is outside that decoder timeout. No audio is indexed.
+No database writes occur until all frame embeddings are ready.
+
+[Video credits](evaluation/VIDEO_ATTRIBUTION.md) explain the switch to two
+public-domain NPS clips after Commons video downloads returned HTTP 429.
+[video-baseline.json](evaluation/video-baseline.json) records actual retrieval
+results and frame timestamps. Generated clips test mechanics; real NPS footage
+tests semantics. The CLI's count/timestamp summary is not a new HTTP contract.
+
 ## Verification
 
 ```bash
@@ -96,10 +155,14 @@ docker compose run --rm -e ML_TEST_DATABASE_URL=postgresql://mediamesh:local-tes
 docker compose run --rm -e ML_RUN_MODEL_TESTS=1 -e ML_TEST_DATABASE_URL=postgresql://mediamesh:local-test-only@postgres-test:5432/mediamesh_test ml-tools pytest
 ```
 
+For the opt-in wildlife-video integration check, download the video manifest
+above, then add `-e ML_RUN_VIDEO_TESTS=1` to the real-model pytest command.
+
 Destructive fixtures refuse targets other than `postgres-test/mediamesh_test`.
 Tests cover empty retrieval, repeat writes, model isolation, timestamps, FK
 cascade, transaction rollback, migration checksums, concurrent replacement,
-image preparation, and validation. Opt-in real-model tests check dimensions,
+image preparation, local indexing/reindexing, real FFmpeg timestamps, cleanup,
+timeouts, corrupt clips, frame limits, and validation. Opt-in real-model tests check dimensions,
 normalization, and elephant-vs-lion retrieval through pgvector.
 
 ## Worker and integration

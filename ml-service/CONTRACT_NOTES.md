@@ -34,7 +34,12 @@ The [original assignment](../docs/team/03_PERSON_3_ML_RETRIEVAL.md) and
 - Joel: private service networking, model cache, resource requirements, and
   shared Compose/CI integration. The Compose file here is standalone only.
 
-Steps 1–3 implement embeddings and vector persistence, but not HTTP search,
+Steps 1–5 implement embeddings, vector persistence, and local image/video indexing,
+but not HTTP search,
 production job processing, or S3. The local V300 migration assumes UUID asset
 IDs until teammate 2 confirms the production FK contract. Unavailable features must not return mock successful responses. Readiness
 will remain 503 until real dependencies are wired and checked in later steps.
+
+Image/video preparation returns records without writing, so the step 6 worker
+can validate its claim and commit vectors/status in one transaction. The local
+CLI persists vectors only; it does not claim jobs or mark production assets READY.

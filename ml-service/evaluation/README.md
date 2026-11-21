@@ -33,3 +33,18 @@ silently accepting changed data. The downloader makes no model calls. Respect
 upstream rate limits and wait before retrying after HTTP 429. Evaluation loads
 the pinned model explicitly. Set `ML_MODEL_OFFLINE=true` after the cache is
 populated to verify offline operation. Model inference uses no hosted API.
+
+## Real video samples
+
+The separate `video-manifest.json` lists two Yellowstone clips from NPS: bison
+and grizzly bear. See [VIDEO_ATTRIBUTION.md](VIDEO_ATTRIBUTION.md) for source and
+usage credits. They replace unavailable Commons video downloads (HTTP 429);
+the original image evaluation is unchanged. Download with the same dataset
+command using `--manifest evaluation/video-manifest.json`. Run
+`python -m mediamesh_ml.evaluate_video` in the tools container for offline
+retrieval and actual frame timestamps. `video-baseline.json` is a small
+demonstration, not a video-understanding benchmark.
+
+Video `indexingSeconds` measures inspection/extraction plus frame encoding in
+memory. It excludes model startup and database persistence; these single local
+CPU observations are not throughput guarantees.

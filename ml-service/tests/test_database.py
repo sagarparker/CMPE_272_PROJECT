@@ -205,3 +205,85 @@ def test_image_indexer_reindex_and_failed_decode_preserve_vectors(store, setting
         service.index_image(aid, "elephant.jpg")
     assert count(settings) == 1
     assert store.search(first[0].embedding, service.model_version, 1)[0].score == pytest.approx(1)
+
+
+def test_video_indexer_replaces_frames_and_preserves_old_set_on_error(store, settings, tmp_path):
+    import subprocess
+
+    from mediamesh_ml.contracts import ModelIdentity
+    from mediamesh_ml.indexing import IndexingService
+    from mediamesh_ml.media import LocalMediaSource
+    from mediamesh_ml.video import VideoSampler
+
+    path = tmp_path / "clip.mp4"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=160x90:rate=4",
+            "-t",
+            "4",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+    class Engine:
+        identity = ModelIdentity("test-model", "revision", 512)
+
+        def encode_images(self, paths):
+            return [AXIS_X for _ in paths]
+
+    config = Settings(video_max_frames=4, video_temp_root=tmp_path)
+    sampler = VideoSampler(config)
+    service = IndexingService(Engine(), LocalMediaSource(tmp_path), store, sampler)
+    aid = asset(settings)
+    first = service.index_video(aid, "clip.mp4")
+    assert len(first) == count(settings) == 4
+    assert all(row.frame_timestamp_seconds is not None for row in first)
+    sampler.settings = Settings(video_max_frames=2, video_temp_root=tmp_path)
+    service.index_video(aid, "clip.mp4")
+    assert count(settings) == 2  # Replaces the old set, including obsolete timestamps.
+    path.write_bytes(b"broken video")
+    with pytest.raises(ValueError):
+        service.index_video(aid, "clip.mp4")
+    assert count(settings) == 2
+    assert not list(tmp_path.glob("mediamesh-frames-*"))
+
+
+@pytest.mark.skipif(os.getenv("ML_RUN_VIDEO_TESTS") != "1", reason="explicit wildlife-video opt-in")
+def test_real_wildlife_video_text_search_returns_asset_and_timestamp(store, settings):
+    from mediamesh_ml.embeddings import ClipEngine
+    from mediamesh_ml.indexing import IndexingService
+    from mediamesh_ml.media import LocalMediaSource
+    from mediamesh_ml.video import VideoSampler
+
+    config = Settings(model_offline=True, video_max_frames=4)
+    engine = ClipEngine(config)
+    sampler = VideoSampler(config)
+    service = IndexingService(engine, LocalMediaSource(Path("/data/media")), store, sampler)
+    ids = {}
+    durations = {}
+    for subject in ["bison", "bear"]:
+        ids[subject] = asset(settings)
+        path = Path("/data/media") / f"video-{subject}.mp4"
+        durations[subject] = sampler.probe(path).duration_seconds
+        rows = service.index_video(ids[subject], path.name)
+        assert len(rows) == 4
+    assert count(settings) == 8
+    for subject, query in [
+        ("bison", "a herd of bison grazing in a green valley"),
+        ("bear", "a bear walking through snow"),
+    ]:
+        match = store.search(engine.encode_text(query), service.model_version, 1)[0]
+        assert match.asset_id == ids[subject]
+        assert 0 <= match.frame_timestamp_seconds < durations[subject]

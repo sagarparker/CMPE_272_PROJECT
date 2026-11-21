@@ -41,6 +41,8 @@ class IndexingService:
             raise ValueError("Video sampler is not configured")
         with self.source.materialize(reference) as path:
             with self.video_sampler.extract(path) as frames:
+                if not frames:
+                    raise ValueError("Video extraction returned no frames")
                 embeddings = self.engine.encode_images([frame.path for frame in frames])
                 if len(embeddings) != len(frames):
                     raise ValueError("Expected one embedding per extracted frame")

@@ -1,4 +1,4 @@
-"""Checksum-verified download of the curated Commons evaluation manifest."""
+"""Checksum-verified download of the curated evaluation manifest."""
 
 import argparse
 import hashlib
@@ -19,11 +19,10 @@ def read_manifest(path: Path) -> list[dict]:
         if Path(item["filename"]).name != item["filename"]:
             raise ValueError("Sample filenames must be basenames")
         url = urlparse(item["download_url"])
-        if url.scheme != "https" or url.hostname not in {
-            "upload.wikimedia.org",
-            "thumb.wikimedia.org",
-        }:
-            raise ValueError("Expected a Wikimedia HTTPS media URL")
+        wikimedia = url.hostname in {"upload.wikimedia.org", "thumb.wikimedia.org"}
+        nps = url.hostname == "www.nps.gov" and url.path.startswith("/nps-audiovideo/")
+        if url.scheme != "https" or not (wikimedia or nps):
+            raise ValueError("Expected an approved Wikimedia or NPS HTTPS media URL")
     return items
 
 

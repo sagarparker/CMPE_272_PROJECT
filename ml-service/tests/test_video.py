@@ -74,3 +74,53 @@ def test_real_ffmpeg_sampling_timestamps_and_cleanup(short_video, tmp_path):
         assert all(p.is_file() for p in paths)
     assert all(not p.exists() for p in paths)
     assert not list(temp.iterdir())
+
+
+def test_non_frame_aligned_sampling_uses_actual_decoded_pts(short_video):
+    sampler = VideoSampler(Settings(video_max_frames=3))
+    with sampler.extract(short_video) as frames:
+        # Targets are 0, 1.333..., 2.666...; real 4-fps frames are later.
+        assert [f.timestamp_seconds for f in frames] == pytest.approx([0, 1.5, 2.75])
+
+
+def test_corrupt_and_overlong_video_fail(short_video, tmp_path):
+    corrupt = tmp_path / "bad.mp4"
+    corrupt.write_bytes(b"not video")
+    with pytest.raises(ValueError, match="decoded"):
+        VideoSampler(Settings()).probe(corrupt)
+    with pytest.raises(ValueError, match="duration"):
+        VideoSampler(Settings(video_max_duration_seconds=1)).probe(short_video)
+
+
+def test_extraction_failure_cleans_temporary_directory(monkeypatch, short_video, tmp_path):
+    from mediamesh_ml.video import VideoInfo
+
+    temp = tmp_path / "temporary"
+    temp.mkdir()
+    sampler = VideoSampler(Settings(video_temp_root=temp))
+    monkeypatch.setattr(sampler, "probe", lambda *a, **k: VideoInfo(4, 160, 90))
+
+    def fail(*args, **kwargs):
+        # Simulate a decoder failure after it has created partial output.
+        directory = next(temp.iterdir())
+        (directory / "frame-001.jpg").write_bytes(b"partial")
+        raise ValueError("Decoder failed")
+
+    monkeypatch.setattr("mediamesh_ml.video.run_tool", fail)
+    with pytest.raises(ValueError, match="Decoder"), sampler.extract(short_video):
+        pytest.fail("Unexpected success")
+    assert list(temp.iterdir()) == []
+
+
+def test_tool_timeout_is_reported_without_leaking_subprocess_details(monkeypatch):
+    import subprocess
+
+    from mediamesh_ml.video import run_tool
+
+    def expire(*args, **kwargs):
+        raise subprocess.TimeoutExpired("sensitive path", 1)
+
+    monkeypatch.setattr(subprocess, "run", expire)
+    with pytest.raises(ValueError, match="timed out") as error:
+        run_tool(["ffmpeg"], 1)
+    assert "sensitive" not in str(error.value)

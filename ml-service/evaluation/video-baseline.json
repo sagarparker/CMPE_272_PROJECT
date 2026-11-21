@@ -1,0 +1,51 @@
+{
+  "modelVersion": "sentence-transformers/clip-ViT-B-32@327ab6726d33c0e22f920c83f2ff9e4bd38ca37f:rgb-l2-v1",
+  "samples": [
+    {
+      "sampleId": "video-bison",
+      "assetId": "dd14ee86-c6a2-542b-a1c8-0be6efba0643",
+      "durationSeconds": 24.491133,
+      "frameCount": 8,
+      "indexingSeconds": 0.49388637499987453
+    },
+    {
+      "sampleId": "video-bear",
+      "assetId": "3cc1413a-67a7-5647-a4c7-5f87f8700b31",
+      "durationSeconds": 50.583867,
+      "frameCount": 8,
+      "indexingSeconds": 0.5927789580000535
+    }
+  ],
+  "queries": [
+    {
+      "query": "a herd of bison grazing in a green valley",
+      "matches": [
+        {
+          "assetId": "dd14ee86-c6a2-542b-a1c8-0be6efba0643",
+          "score": 0.35697768468194757,
+          "frameTimestampSeconds": 18.385
+        },
+        {
+          "assetId": "3cc1413a-67a7-5647-a4c7-5f87f8700b31",
+          "score": 0.25937114473252154,
+          "frameTimestampSeconds": 44.2776
+        }
+      ]
+    },
+    {
+      "query": "a bear walking through snow",
+      "matches": [
+        {
+          "assetId": "3cc1413a-67a7-5647-a4c7-5f87f8700b31",
+          "score": 0.32778174504370594,
+          "frameTimestampSeconds": 37.9713
+        },
+        {
+          "assetId": "dd14ee86-c6a2-542b-a1c8-0be6efba0643",
+          "score": 0.16174457190830102,
+          "frameTimestampSeconds": 6.13947
+        }
+      ]
+    }
+  ]
+}
