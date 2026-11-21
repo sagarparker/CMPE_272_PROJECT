@@ -20,7 +20,7 @@ class Repository:
     def is_ready(self):
         return True
 
-    def search(self, vector, model_version, limit):
+    def search_assets(self, vector, model_version, limit):
         assert len(vector) == 512
         assert model_version == "test-model@revision:rgb-l2-v1"
         return [Match(UUID(int=1), 0.8, None)]

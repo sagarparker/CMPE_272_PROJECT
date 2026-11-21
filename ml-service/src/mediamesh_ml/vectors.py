@@ -101,3 +101,23 @@ class PgVectorRepository:
         return [
             Match(asset_id=row[0], score=row[1], frame_timestamp_seconds=row[2]) for row in rows
         ]
+
+    def search_assets(
+        self, embedding: Embedding, model_version: str, limit: int
+    ) -> Sequence[Match]:
+        validate_model_version(model_version)
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1000:
+            raise ValueError("Repository limit must be an integer between 1 and 1000")
+        query = vector_literal(embedding)
+        with connection(self.settings) as conn:
+            rows = conn.execute(
+                "SELECT asset_id, score, frame_timestamp_seconds FROM ("
+                "SELECT DISTINCT ON (asset_id) asset_id, "
+                "1 - (embedding <=> %s::vector) AS score, frame_timestamp_seconds "
+                "FROM public.asset_vectors WHERE model_version=%s "
+                "ORDER BY asset_id, embedding <=> %s::vector, "
+                "frame_timestamp_seconds NULLS FIRST, id) best "
+                "ORDER BY score DESC, asset_id LIMIT %s",
+                (query, model_version, query, limit),
+            ).fetchall()
+        return [Match(row[0], row[1], row[2]) for row in rows]

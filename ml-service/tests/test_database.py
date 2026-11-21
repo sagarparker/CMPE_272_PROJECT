@@ -287,3 +287,20 @@ def test_real_wildlife_video_text_search_returns_asset_and_timestamp(store, sett
         match = store.search(engine.encode_text(query), service.model_version, 1)[0]
         assert match.asset_id == ids[subject]
         assert 0 <= match.frame_timestamp_seconds < durations[subject]
+
+
+def test_asset_ranking_deduplicates_before_limit_and_breaks_ties(store, settings):
+    video = asset(settings, UUID(int=1))
+    image = asset(settings, UUID(int=2))
+    other = asset(settings, UUID(int=3))
+    store.replace(video, "model-a", [record(video, timestamp=i) for i in range(8)])
+    store.replace(image, "model-a", [record(image, (0.8, 0.6) + (0.0,) * 510)])
+    store.replace(other, "model-a", [record(other, AXIS_Y)])
+    matches = store.search_assets(AXIS_X, "model-a", 3)
+    assert [m.asset_id for m in matches] == [video, image, other]
+    assert matches[0].frame_timestamp_seconds == 0
+    assert matches[1].frame_timestamp_seconds is None
+    assert [m.score for m in matches] == pytest.approx([1, 0.8, 0])
+    store.replace(image, "model-a", [record(image)])
+    assert [m.asset_id for m in store.search_assets(AXIS_X, "model-a", 2)] == [video, image]
+    assert store.is_ready()

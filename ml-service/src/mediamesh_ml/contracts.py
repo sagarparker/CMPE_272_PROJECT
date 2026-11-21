@@ -64,6 +64,14 @@ class MediaSource(Protocol):
 
 
 class VectorRepository(Protocol):
+    def is_ready(self) -> bool: ...
+
+    def search_assets(
+        self, embedding: Embedding, model_version: str, limit: int
+    ) -> Sequence[Match]:
+        """Return one best frame per asset, then apply the result limit."""
+        ...
+
     def replace(self, asset_id: UUID, model_version: str, records: Sequence[VectorRecord]) -> None:
         """Atomically replace the asset/model vector set."""
         ...

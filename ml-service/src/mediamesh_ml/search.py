@@ -35,4 +35,4 @@ class SearchService:
             raise SearchUnavailable("Search dependencies are unavailable")
         with self._inference_lock:
             vector = self.engine.encode_text(query)
-        return self.repository.search(vector, embedding_version(self.engine.identity), limit)
+        return self.repository.search_assets(vector, embedding_version(self.engine.identity), limit)
