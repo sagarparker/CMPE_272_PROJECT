@@ -1,0 +1,25 @@
+# Pinned Python + uv base; update deliberately and rebuild when refreshing dependencies.
+FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim@sha256:4f5d923c9dcea037f57bda425dd209f3ec643da2f0b74227f68d09dab0b3bb36 AS base
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_LINK_MODE=copy \
+    PATH="/app/.venv/bin:$PATH" \
+    HF_HOME=/data/models
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 app && useradd --uid 10001 --gid app --create-home app \
+    && mkdir -p /app /data/models /data/media && chown -R app:app /app /data
+WORKDIR /app
+COPY --chown=app:app pyproject.toml uv.lock ./
+COPY --chown=app:app src ./src
+USER app
+
+FROM base AS runtime
+RUN uv sync --locked --no-dev --no-editable
+EXPOSE 8000
+CMD ["uvicorn", "mediamesh_ml.api:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+
+FROM base AS tools
+RUN uv sync --locked --no-editable
+COPY --chown=app:app tests ./tests
+CMD ["pytest"]
