@@ -26,3 +26,9 @@ def database_status(settings: Settings) -> dict[str, bool]:
             "to_regclass('public.asset_vectors') IS NOT NULL"
         ).fetchone()
     return {"vector_extension": row[0], "vector_table": row[1]}
+
+
+if __name__ == "__main__":
+    import json
+
+    print(json.dumps(database_status(Settings())))
