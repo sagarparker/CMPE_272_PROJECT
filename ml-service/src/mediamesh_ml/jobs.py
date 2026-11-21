@@ -2,11 +2,19 @@
 
 import argparse
 import json
+import re
+from collections.abc import Sequence
 from pathlib import Path
 from uuid import UUID, uuid4
 
 from mediamesh_ml.config import Settings
+from mediamesh_ml.contracts import ClaimedJob, VectorRecord
 from mediamesh_ml.database import connection
+from mediamesh_ml.vectors import replace_in_transaction
+
+
+class StaleClaim(RuntimeError):
+    """A recovered/reassigned job cannot be completed by its former owner."""
 
 
 def initialize_local_jobs(settings: Settings):
@@ -59,10 +67,119 @@ class LocalJobStore:
             )
         return job_id
 
+    def _recover(self, conn):
+        expired = conn.execute(
+            "SELECT id, asset_id, attempts, max_attempts FROM ml_dev.index_jobs "
+            "WHERE status='PROCESSING' AND lease_expires_at<=clock_timestamp() "
+            "ORDER BY lease_expires_at LIMIT 100 FOR UPDATE SKIP LOCKED"
+        ).fetchall()
+        for jid, aid, attempts, maximum in expired:
+            terminal = attempts >= maximum
+            conn.execute(
+                "UPDATE ml_dev.index_jobs SET status=%s, claim_token=NULL, lease_expires_at=NULL, "
+                "available_at=clock_timestamp()+(%s * interval '1 second'), "
+                "last_error='LeaseExpired' WHERE id=%s",
+                ("FAILED" if terminal else "PENDING", self._delay(attempts), jid),
+            )
+            conn.execute(
+                "UPDATE ml_dev.asset_states SET processing_status=%s WHERE asset_id=%s",
+                ("FAILED" if terminal else "PROCESSING", aid),
+            )
+
+    def _delay(self, attempt):
+        return min(
+            self.settings.job_retry_base_seconds * 2 ** (attempt - 1),
+            self.settings.job_retry_max_seconds,
+        )
+
+    def claim(self) -> ClaimedJob | None:
+        with connection(self.settings) as conn:
+            self._recover(conn)
+            row = conn.execute(
+                "SELECT id, asset_id, media_reference, media_type, attempts "
+                "FROM ml_dev.index_jobs WHERE status='PENDING' AND attempts<max_attempts "
+                "AND available_at<=clock_timestamp() ORDER BY available_at, created_at, id "
+                "LIMIT 1 FOR UPDATE SKIP LOCKED"
+            ).fetchone()
+            if not row:
+                return None
+            token = uuid4()
+            conn.execute(
+                "UPDATE ml_dev.index_jobs SET status='PROCESSING', attempts=attempts+1, "
+                "claim_token=%s, lease_expires_at=clock_timestamp()+(%s * interval '1 second') "
+                "WHERE id=%s",
+                (token, self.settings.job_lease_seconds, row[0]),
+            )
+            return ClaimedJob(row[0], row[1], row[2], row[3], str(token), row[4] + 1)
+
+    def renew(self, job: ClaimedJob) -> bool:
+        with connection(self.settings) as conn:
+            return bool(
+                conn.execute(
+                    "UPDATE ml_dev.index_jobs SET lease_expires_at=clock_timestamp()+"
+                    "(%s * interval '1 second') WHERE id=%s AND claim_token=%s "
+                    "AND status='PROCESSING' AND lease_expires_at>clock_timestamp() RETURNING id",
+                    (self.settings.job_lease_seconds, job.job_id, UUID(job.claim_token)),
+                ).fetchone()
+            )
+
+    def _require_claim(self, conn, job):
+        row = conn.execute(
+            "SELECT asset_id, media_type, attempts FROM ml_dev.index_jobs WHERE id=%s "
+            "AND claim_token=%s AND status='PROCESSING' "
+            "AND lease_expires_at>clock_timestamp() FOR UPDATE",
+            (job.job_id, UUID(job.claim_token)),
+        ).fetchone()
+        if not row or row != (job.asset_id, job.media_type, job.attempt):
+            raise StaleClaim("Job lease is expired or no longer owned")
+
+    def complete(self, job: ClaimedJob, records: Sequence[VectorRecord]) -> None:
+        if not records:
+            raise ValueError("Cannot mark an empty index READY")
+        if job.media_type == "image" and (
+            len(records) != 1 or records[0].frame_timestamp_seconds is not None
+        ):
+            raise ValueError("Image jobs require one image vector")
+        if job.media_type == "video" and any(r.frame_timestamp_seconds is None for r in records):
+            raise ValueError("Video jobs require timestamped vectors")
+        with connection(self.settings) as conn:
+            self._require_claim(conn, job)
+            replace_in_transaction(conn, job.asset_id, records[0].model_version, records)
+            conn.execute(
+                "UPDATE ml_dev.index_jobs SET status='SUCCEEDED', claim_token=NULL, "
+                "lease_expires_at=NULL, last_error=NULL WHERE id=%s",
+                (job.job_id,),
+            )
+            conn.execute(
+                "UPDATE ml_dev.asset_states SET processing_status='READY' WHERE asset_id=%s",
+                (job.asset_id,),
+            )
+
+    def fail(self, job: ClaimedJob, error: str, *, retryable: bool) -> None:
+        # Persist error codes, never arbitrary media URLs, paths, or exception messages.
+        code = error if re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", error) else "ProcessingError"
+        with connection(self.settings) as conn:
+            self._require_claim(conn, job)
+            maximum = conn.execute(
+                "SELECT max_attempts FROM ml_dev.index_jobs WHERE id=%s", (job.job_id,)
+            ).fetchone()[0]
+            terminal = not retryable or job.attempt >= maximum
+            conn.execute(
+                "UPDATE ml_dev.index_jobs SET status=%s, last_error=%s, claim_token=NULL, "
+                "lease_expires_at=NULL, available_at=clock_timestamp()+(%s * interval '1 second') "
+                "WHERE id=%s",
+                ("FAILED" if terminal else "PENDING", code, self._delay(job.attempt), job.job_id),
+            )
+            conn.execute(
+                "UPDATE ml_dev.asset_states SET processing_status=%s WHERE asset_id=%s",
+                ("FAILED" if terminal else "PROCESSING", job.asset_id),
+            )
+
     def status(self, job_id: UUID) -> dict:
         with connection(self.settings) as conn:
             row = conn.execute(
-                "SELECT status, attempts, max_attempts, last_error FROM ml_dev.index_jobs WHERE id=%s",
+                "SELECT status, attempts, max_attempts, last_error FROM ml_dev.index_jobs "
+                "WHERE id=%s",
                 (job_id,),
             ).fetchone()
         if not row:

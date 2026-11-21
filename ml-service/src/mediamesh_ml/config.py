@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     device: str = "cpu"
     log_level: str = "INFO"
     worker_poll_seconds: float = Field(default=2.0, gt=0)
+    job_lease_seconds: float = Field(default=60, ge=1, le=3600)
+    job_retry_base_seconds: float = Field(default=2, ge=0, le=300)
+    job_retry_max_seconds: float = Field(default=60, ge=0, le=3600)
     job_max_attempts: int = Field(default=3, ge=1, le=20)
     video_max_frames: int = Field(default=8, ge=1, le=100)
     video_max_duration_seconds: float = Field(default=180, gt=0)
