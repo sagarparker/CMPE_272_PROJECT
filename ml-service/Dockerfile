@@ -22,4 +22,5 @@ CMD ["uvicorn", "mediamesh_ml.api:create_app", "--factory", "--host", "0.0.0.0",
 FROM base AS tools
 RUN uv sync --locked --no-editable
 COPY --chown=app:app tests ./tests
+COPY --chown=app:app evaluation ./evaluation
 CMD ["pytest"]

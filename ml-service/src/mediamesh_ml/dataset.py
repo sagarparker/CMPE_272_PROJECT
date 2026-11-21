@@ -50,7 +50,7 @@ def download(item: dict, directory: Path) -> Path:
         except OSError:
             if attempt == 2:
                 raise
-            time.sleep(attempt + 1)
+            time.sleep(5 * (attempt + 1))
     raise RuntimeError("Unreachable")
 
 

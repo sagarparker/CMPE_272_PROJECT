@@ -18,8 +18,9 @@ The [original assignment](../docs/team/03_PERSON_3_ML_RETRIEVAL.md) and
 
 ## Pending agreements (not established by local fixtures)
 
-- Model revision, dimensions, and normalization: evaluate and pin in step 2,
-  before writing the vector migration.
+- Model evaluated locally: CLIP revision
+  `327ab6726d33c0e22f920c83f2ff9e4bd38ca37f`, 512 dimensions, L2 normalized,
+  `rgb-l2-v1` preprocessing. See MODEL.md for measured quality and limitations.
 - Mathew: `assets.id` type, V2xx prerequisites, job fields, claim fencing,
   retries/leases, and atomic vector/job/asset completion behavior. Python
   protocols describe capabilities, not a competing production table schema.

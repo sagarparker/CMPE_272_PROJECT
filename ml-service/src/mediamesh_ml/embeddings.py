@@ -24,8 +24,9 @@ class ClipEngine:
             cache_folder=str(self.settings.model_cache),
             local_files_only=self.settings.model_offline,
             trust_remote_code=False,
+            processor_kwargs={"use_fast": False},
         )
-        if model.get_sentence_embedding_dimension() != self.settings.embedding_dimensions:
+        if model.get_embedding_dimension() != self.settings.embedding_dimensions:
             raise ValueError("Loaded model dimensions do not match configured dimensions")
         model.eval()
         return model
