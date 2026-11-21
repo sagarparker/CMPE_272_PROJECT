@@ -72,6 +72,12 @@ class ClipEngine:
     def encode_text(self, text: str):
         if not text.strip():
             raise ValueError("Query must not be blank")
+        tokenizer = self.model[0].tokenizer
+        tokens = tokenizer(text, truncation=False, max_length=tokenizer.model_max_length)[
+            "input_ids"
+        ]
+        if len(tokens) > tokenizer.model_max_length:
+            raise ValueError("Query exceeds the pinned CLIP token budget")
         return self._encode([text])[0]
 
     def encode_images(self, paths):
