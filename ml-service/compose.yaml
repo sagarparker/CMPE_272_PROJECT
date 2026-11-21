@@ -15,6 +15,9 @@ x-app-environment: &app-environment
   ML_EMBEDDING_BATCH_SIZE: ${ML_EMBEDDING_BATCH_SIZE:-8}
   ML_MODEL_OFFLINE: ${ML_MODEL_OFFLINE:-false}
   ML_WORKER_POLL_SECONDS: ${ML_WORKER_POLL_SECONDS:-2}
+  ML_JOB_LEASE_SECONDS: ${ML_JOB_LEASE_SECONDS:-60}
+  ML_JOB_RETRY_BASE_SECONDS: ${ML_JOB_RETRY_BASE_SECONDS:-2}
+  ML_JOB_RETRY_MAX_SECONDS: ${ML_JOB_RETRY_MAX_SECONDS:-60}
   ML_JOB_MAX_ATTEMPTS: ${ML_JOB_MAX_ATTEMPTS:-3}
   ML_MEDIA_MAX_BYTES: ${ML_MEDIA_MAX_BYTES:-100000000}
   ML_VIDEO_MAX_DURATION_SECONDS: ${ML_VIDEO_MAX_DURATION_SECONDS:-180}
@@ -84,11 +87,12 @@ services:
       retries: 3
       start_period: 5s
 
-  # Explicit scaffold only. This profile exits with a clear error until step 6.
+  # Enable after explicit local job-fixture initialization.
   ml-worker:
     <<: *runtime
     profiles: [worker]
     command: [python, -m, mediamesh_ml.worker]
+    stop_grace_period: 150s
     depends_on:
       postgres:
         condition: service_healthy
