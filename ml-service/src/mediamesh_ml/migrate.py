@@ -17,9 +17,10 @@ def apply_migrations(settings: Settings, directory: Path, *, fixture: Path | Non
         conn.execute("SELECT pg_advisory_xact_lock(300272)")
         if fixture:
             if conn.info.dbname not in {"mediamesh", "mediamesh_test"} or conn.info.host not in {
-                "postgres", "postgres-test"
+                "postgres",
+                "postgres-test",
             }:
-                raise ValueError("Local asset fixture is restricted to Compose development/test DBs")
+                raise ValueError("Local fixture requires the Compose development/test database")
             conn.execute(fixture.read_text(), prepare=False)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS ml_schema_migrations (
@@ -50,7 +51,8 @@ def main():
     parser.add_argument("--local-fixture", action="store_true")
     args = parser.parse_args()
     apply_migrations(
-        Settings(), args.directory,
+        Settings(),
+        args.directory,
         fixture=Path("dev/bootstrap_assets.sql") if args.local_fixture else None,
     )
     print("Vector migrations are current")

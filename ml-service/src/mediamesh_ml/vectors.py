@@ -24,7 +24,9 @@ def validate_model_version(model_version: str):
         raise ValueError("Model version must not be blank")
 
 
-def replace_in_transaction(conn, asset_id: UUID, model_version: str, records: Sequence[VectorRecord]):
+def replace_in_transaction(
+    conn, asset_id: UUID, model_version: str, records: Sequence[VectorRecord]
+):
     """Caller owns the transaction, allowing future atomic job completion."""
     validate_model_version(model_version)
     prepared = []
@@ -43,12 +45,15 @@ def replace_in_transaction(conn, asset_id: UUID, model_version: str, records: Se
     if not conn.execute("SELECT id FROM assets WHERE id=%s FOR UPDATE", (asset_id,)).fetchone():
         raise ValueError("Asset does not exist")
     conn.execute(
-        "DELETE FROM asset_vectors WHERE asset_id=%s AND model_version=%s", (asset_id, model_version)
+        "DELETE FROM asset_vectors WHERE asset_id=%s AND model_version=%s",
+        (asset_id, model_version),
     )
     with conn.cursor() as cursor:
         cursor.executemany(
-            "INSERT INTO asset_vectors(asset_id, frame_timestamp_seconds, model_version, embedding) "
-            "VALUES (%s, %s, %s, %s::vector)", prepared,
+            "INSERT INTO asset_vectors"
+            "(asset_id, frame_timestamp_seconds, model_version, embedding) "
+            "VALUES (%s, %s, %s, %s::vector)",
+            prepared,
         )
 
 
@@ -78,4 +83,6 @@ class PgVectorRepository:
                 "frame_timestamp_seconds NULLS FIRST, id LIMIT %s",
                 (query, model_version, query, limit),
             ).fetchall()
-        return [Match(asset_id=row[0], score=row[1], frame_timestamp_seconds=row[2]) for row in rows]
+        return [
+            Match(asset_id=row[0], score=row[1], frame_timestamp_seconds=row[2]) for row in rows
+        ]
