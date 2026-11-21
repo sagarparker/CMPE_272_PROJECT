@@ -4,6 +4,19 @@ Plain HTML/CSS/JavaScript, served by a separate FastAPI development gateway.
 No frontend build tools or external assets. The production `frontend/` remains
 untouched and the original ML `/internal/search` request/response is unchanged.
 
+## Start and stop with one script
+
+From the repository root:
+
+```bash
+./ml-service/manage.sh start
+./ml-service/manage.sh stop
+```
+
+The script also supports `restart`, `status`, and `logs [SERVICE]`. It waits for
+readiness and preserves stored data when stopped. Docker Desktop must be running.
+See [LOCAL_WORKFLOW.md](../LOCAL_WORKFLOW.md) for setup details and all commands.
+
 From `ml-service/`, after the database/model setup in `LOCAL_WORKFLOW.md`:
 
 ```bash

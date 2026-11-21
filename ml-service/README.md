@@ -7,6 +7,19 @@ complete Docker queue → worker → HTTP search demonstration, including retry.
 See the [original assignment](../docs/team/03_PERSON_3_ML_RETRIEVAL.md) and
 [contract notes](CONTRACT_NOTES.md) for integration boundaries.
 
+## Start and stop with one script
+
+From the repository root:
+
+```bash
+./ml-service/manage.sh start
+./ml-service/manage.sh stop
+```
+
+The script also supports `restart`, `status`, and `logs [SERVICE]`. It waits for
+readiness and preserves stored data when stopped. Docker Desktop must be running.
+See [LOCAL_WORKFLOW.md](LOCAL_WORKFLOW.md) for setup details and all commands.
+
 ## Optional browser test console
 
 A plain local page can upload/index images and videos, queue samples, show jobs

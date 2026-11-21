@@ -3,6 +3,34 @@
 Run commands from `ml-service/`. This workflow uses local fixtures, Docker, and
 cached CLIP weights; it does not provision hosting or use S3.
 
+## Start and stop with one script
+
+From the repository root:
+
+```bash
+./ml-service/manage.sh start
+./ml-service/manage.sh stop
+./ml-service/manage.sh restart
+./ml-service/manage.sh status
+./ml-service/manage.sh logs
+./ml-service/manage.sh logs ml-worker
+```
+
+The executable script also works from any other directory using its absolute
+path. It manages PostgreSQL, the ML API, worker, and local test frontend together.
+`start` reuses Docker build layers, initializes the guarded local fixtures,
+loads/caches the pinned model, and waits for readiness. The first run may download
+images/dependencies/model weights; existing media are not reindexed and samples
+are not downloaded. Existing `.env` settings are preserved and used by Compose.
+An explicitly configured offline model mode requires an already-populated cache.
+
+`stop` drains the worker before stopping PostgreSQL. It retains containers,
+database volumes, embeddings, cached weights, and uploaded files. The optional
+test database is not managed by this script. Docker Desktop must already be
+running. `logs` follows output until Ctrl+C without stopping services. Running
+`start` after `stop` restores the same stored data. The script prints the actual
+frontend/API URLs, including configured custom ports.
+
 ## First setup or update
 
 Preserve an existing `.env`; copy `.env.example` only on first setup.
