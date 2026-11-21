@@ -183,3 +183,25 @@ def test_real_clip_vectors_round_trip_through_postgres(store, settings):
     )
     assert matches[0].asset_id == ids[0]  # Elephant ranks above lion.
     assert len(matches) == 2
+
+
+@pytest.mark.skipif(os.getenv("ML_RUN_MODEL_TESTS") != "1", reason="explicit real-model opt-in")
+def test_image_indexer_reindex_and_failed_decode_preserve_vectors(store, settings, tmp_path):
+    from mediamesh_ml.embeddings import ClipEngine
+    from mediamesh_ml.indexing import IndexingService
+    from mediamesh_ml.media import LocalMediaSource
+
+    path = tmp_path / "elephant.jpg"
+    path.write_bytes(Path("/data/media/elephant-02.jpg").read_bytes())
+    engine = ClipEngine(Settings(model_offline=True))
+    service = IndexingService(engine, LocalMediaSource(tmp_path), store)
+    aid = asset(settings)
+    first = service.index_image(aid, "elephant.jpg")
+    second = service.index_image(aid, "elephant.jpg")
+    assert first == second
+    assert count(settings) == 1
+    path.write_bytes(b"corrupt")
+    with pytest.raises(OSError):
+        service.index_image(aid, "elephant.jpg")
+    assert count(settings) == 1
+    assert store.search(first[0].embedding, service.model_version, 1)[0].score == pytest.approx(1)
