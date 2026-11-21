@@ -304,3 +304,34 @@ def test_asset_ranking_deduplicates_before_limit_and_breaks_ties(store, settings
     store.replace(image, "model-a", [record(image)])
     assert [m.asset_id for m in store.search_assets(AXIS_X, "model-a", 2)] == [video, image]
     assert store.is_ready()
+
+
+def test_search_http_contract_against_real_vector_database(store, settings):
+    from fastapi.testclient import TestClient
+
+    from mediamesh_ml.api import create_app
+    from mediamesh_ml.contracts import ModelIdentity, embedding_version
+    from mediamesh_ml.search import SearchService
+
+    class Engine:
+        identity = ModelIdentity("test", "revision", 512)
+
+        def load(self):
+            pass
+
+        def encode_text(self, query):
+            return AXIS_X
+
+    service = SearchService(Engine(), store)
+    with TestClient(create_app(settings, search_service=service)) as client:
+        assert client.post("/internal/search", json={"query": "empty"}).json() == {"matches": []}
+        aid = asset(settings)
+        version = embedding_version(Engine.identity)
+        store.replace(aid, version, [record(aid, version=version, timestamp=1.25)])
+        response = client.post("/internal/search", json={"query": "wildlife", "limit": 5})
+        assert response.status_code == 200
+        match = response.json()["matches"][0]
+        assert set(match) == {"assetId", "score", "frameTimestampSeconds"}
+        assert match["assetId"] == str(aid)
+        assert match["frameTimestampSeconds"] == 1.25
+        assert client.get("/ready").status_code == 200

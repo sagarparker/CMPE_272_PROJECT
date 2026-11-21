@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
 from mediamesh_ml.config import Settings
+from mediamesh_ml.contracts import InvalidQuery
 from mediamesh_ml.embeddings import ClipEngine
 from mediamesh_ml.schemas import ErrorResponse, SearchMatch, SearchRequest, SearchResponse
 from mediamesh_ml.search import SearchService
@@ -98,7 +99,7 @@ def create_app(settings: Settings | None = None, *, search_service=None) -> Fast
                     for row in matches
                 ]
             )
-        except ValueError:
+        except InvalidQuery:
             return error_response(400, "INVALID_INPUT", "Invalid request input")
         except Exception as error:
             logger.warning("Search failed: %s", type(error).__name__)

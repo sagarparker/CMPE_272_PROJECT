@@ -10,6 +10,10 @@ from uuid import UUID
 Embedding = tuple[float, ...]
 
 
+class InvalidQuery(ValueError):
+    """A query exceeds the supported input constraints."""
+
+
 @dataclass(frozen=True)
 class ModelIdentity:
     name: str

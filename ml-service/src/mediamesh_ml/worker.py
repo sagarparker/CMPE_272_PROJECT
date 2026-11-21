@@ -111,7 +111,8 @@ def main() -> int:
         settings,
     )
     if args.once:
-        worker.run_once()
+        if not stop.is_set():
+            worker.run_once()
     else:
         worker.run(stop)
     return 0

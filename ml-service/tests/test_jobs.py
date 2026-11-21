@@ -220,3 +220,73 @@ def test_shutdown_finishes_current_job_without_claiming_another(store, settings,
     Worker(store, service, settings).run(stop)
     assert store.status(first)["status"] == "SUCCEEDED"
     assert store.status(second)["status"] == "PENDING"
+
+
+@pytest.mark.skipif(
+    os.getenv("ML_RUN_VIDEO_TESTS") != "1" or os.getenv("ML_RUN_MODEL_TESTS") != "1",
+    reason="explicit real worker-to-search opt-in",
+)
+def test_real_worker_to_http_search_for_image_and_video(store, settings):
+    from fastapi.testclient import TestClient
+
+    from mediamesh_ml.api import create_app
+    from mediamesh_ml.embeddings import ClipEngine
+    from mediamesh_ml.search import SearchService
+    from mediamesh_ml.video import VideoSampler
+
+    config = settings.model_copy(update={"model_offline": True, "video_max_frames": 4})
+    engine = ClipEngine(config)
+    engine.load()
+    repository = PgVectorRepository(settings)
+    service = IndexingService(
+        engine, LocalMediaSource(Path("/data/media")), repository, VideoSampler(config)
+    )
+    image_id = add_asset(settings)
+    video_id = add_asset(settings)
+    store.enqueue(image_id, "elephant-02.jpg", "image")
+    store.enqueue(video_id, "video-bison.mp4", "video")
+    worker = Worker(store, service, config)
+    assert worker.run_once() and worker.run_once()
+    assert state(settings, image_id) == state(settings, video_id) == "READY"
+    with TestClient(
+        create_app(settings, search_service=SearchService(engine, repository))
+    ) as client:
+        for aid, query, image in [
+            (image_id, "elephants drinking water", True),
+            (video_id, "a herd of bison grazing in a green valley", False),
+        ]:
+            response = client.post("/internal/search", json={"query": query, "limit": 1})
+            assert response.status_code == 200
+            match = response.json()["matches"][0]
+            assert match["assetId"] == str(aid)
+            assert (match["frameTimestampSeconds"] is None) == image
+
+
+def test_status_write_failure_rolls_back_vector_and_job_success(store, settings):
+    import psycopg
+
+    aid = add_asset(settings)
+    repository = PgVectorRepository(settings)
+    repository.replace(aid, "model", [VectorRecord(aid, VECTOR, "model")])
+    jid = store.enqueue(aid, "image.png", "image")
+    job = store.claim()
+    with connection(settings) as conn:
+        conn.execute(
+            """
+            CREATE FUNCTION ml_dev.reject_ready() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN RAISE EXCEPTION 'simulated status failure'; RETURN NEW; END $$;
+            CREATE TRIGGER reject_ready BEFORE UPDATE ON ml_dev.asset_states
+            FOR EACH ROW EXECUTE FUNCTION ml_dev.reject_ready();
+        """,
+            prepare=False,
+        )
+    try:
+        with pytest.raises(psycopg.errors.RaiseException):
+            store.complete(job, [VectorRecord(aid, (0.0, 1.0) + (0.0,) * 510, "model")])
+    finally:
+        with connection(settings) as conn:
+            conn.execute("DROP TRIGGER reject_ready ON ml_dev.asset_states")
+            conn.execute("DROP FUNCTION ml_dev.reject_ready()")
+    assert repository.search(VECTOR, "model", 1)[0].score == pytest.approx(1)
+    assert store.status(jid)["status"] == "PROCESSING"
+    assert state(settings, aid) == "PROCESSING"
