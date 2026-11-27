@@ -19,7 +19,7 @@
         <java.version>17</java.version>
         <!-- Patch the embedded runtime flagged by CISA KEV (CVE-2025-24813). -->
         <tomcat.version>10.1.62</tomcat.version>
-        <resilience4j.version>2.2.0</resilience4j.version>
+        <resilience4j.version>2.4.0</resilience4j.version>
     </properties>
 
     <dependencies>
