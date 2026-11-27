@@ -24,14 +24,14 @@ async function login(browser, username) {
 async function grant(admin, target, roles) {
   const response = await admin.page.request.put(
     `/api/admin/users/${target.user.id}/roles`,
-    { headers: { Authorization: admin.token }, data: { roles } },
+    { headers: { Authorization: admin.token }, data: { roles }, timeout: 10000 },
   );
   expect(response.ok()).toBeTruthy();
 }
 
 test("SSO, role grants, image/video indexing, search, preview, download and revocation", async ({
   browser,
-}) => {
+}, testInfo) => {
   const employee = await login(browser, "employee");
   await expect(
     employee.page.getByText("Your account is ready.", { exact: false }),
@@ -44,6 +44,7 @@ test("SSO, role grants, image/video indexing, search, preview, download and revo
   const uploader = await login(browser, "uploader"),
     researcher = await login(browser, "researcher"),
     admin = await login(browser, "admin");
+  let primaryError;
   try {
     for (const [target, role] of [
       [uploader, "UPLOADER"],
@@ -95,8 +96,8 @@ test("SSO, role grants, image/video indexing, search, preview, download and revo
       .click();
     const editor = uploader.page.getByRole("dialog", { name: "Edit metadata" });
     await editor
-      .getByLabel("Shot notes")
-      .fill("Updated from the editorial portal");
+      .getByLabel("Additional notes (optional)", { exact: true })
+      .fill("Updated from the editorial portal", { timeout: 10000 });
     await editor.getByRole("button", { name: "Save changes" }).click();
     await expect(editor).not.toBeVisible();
     const listing = await uploader.page.request.get("/api/assets", {
@@ -248,17 +249,32 @@ test("SSO, role grants, image/video indexing, search, preview, download and revo
     ).toBe(403);
     const anonymous = await browser.newContext();
     expect(
-      (await anonymous.request.get("http://localhost:8080/api/me")).status(),
+      (await anonymous.request.get(new URL("/api/me", researcher.page.url()).href)).status(),
     ).toBe(401);
     await anonymous.close();
+  } catch (error) {
+    primaryError = error;
+    throw error;
   } finally {
-    await grant(admin, researcher, []);
-    await grant(admin, uploader, []);
-    await Promise.all([
+    // Cleanup must not hide the failed assertion (or a global test timeout).
+    // A timed-out test may already have closed its browser contexts.
+    const cleanup = await Promise.allSettled([
+      grant(admin, researcher, []),
+      grant(admin, uploader, []),
+    ]);
+    await Promise.allSettled([
       employee.context.close(),
       uploader.context.close(),
       researcher.context.close(),
       admin.context.close(),
     ]);
+    const failures = cleanup.filter(result => result.status === "rejected");
+    if (failures.length) {
+      if (!primaryError && testInfo.status !== "timedOut") throw failures[0].reason;
+      await testInfo.attach("role-cleanup-errors", {
+        body: failures.map(result => String(result.reason)).join("\n"),
+        contentType: "text/plain",
+      }).catch(() => {});
+    }
   }
 });

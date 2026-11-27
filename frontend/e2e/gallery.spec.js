@@ -24,7 +24,7 @@ async function gallery(page) {
 test("search shows photographs immediately; modal supports navigation, credits and Escape", async ({ page }) => {
   await gallery(page);
   await page.getByRole("button", { name: "Birds", exact: true }).click();
-  await expect(page.getByLabel("Describe what you need")).toHaveValue("birds in flight");
+  await expect(page.getByLabel("Describe what you need")).toHaveValue("birds in natural settings");
   const first = page.locator(".result").first();
   await expect.poll(() => first.locator("img").evaluate(img => img.naturalWidth)).toBeGreaterThan(0);
   await expect(page.getByRole("dialog")).not.toBeVisible();
@@ -37,10 +37,10 @@ test("search shows photographs immediately; modal supports navigation, credits a
   await expect(modal.getByRole("button", { name: "Previous asset" })).toBeDisabled();
   await expect(modal).toContainText("Test photographer");
   await page.keyboard.press("ArrowRight");
-  await expect(modal.getByRole("heading")).toHaveText("Plants | Sunflower head");
+  await expect(modal.getByRole("heading", { level: 3 })).toHaveText("Plants | Sunflower head");
   await expect(modal.getByRole("button", { name: "Next asset" })).toBeDisabled();
   await page.keyboard.press("ArrowLeft");
-  await expect(modal.getByRole("heading")).toHaveText("Birds | Puffin portrait");
+  await expect(modal.getByRole("heading", { level: 3 })).toHaveText("Birds | Puffin portrait");
   await page.keyboard.press("Escape");
   await expect(modal).not.toBeVisible();
   await expect(trigger).toBeFocused();
