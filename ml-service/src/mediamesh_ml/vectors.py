@@ -103,7 +103,7 @@ class PgVectorRepository:
         ]
 
     def search_assets(
-        self, embedding: Embedding, model_version: str, limit: int
+        self, embedding: Embedding, model_version: str, limit: int, asset_ids=None
     ) -> Sequence[Match]:
         validate_model_version(model_version)
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1000:
@@ -115,9 +115,25 @@ class PgVectorRepository:
                 "SELECT DISTINCT ON (asset_id) asset_id, "
                 "1 - (embedding <=> %s::vector) AS score, frame_timestamp_seconds "
                 "FROM public.asset_vectors WHERE model_version=%s "
+                "AND (%s::uuid[] IS NULL OR asset_id=ANY(%s::uuid[])) "
                 "ORDER BY asset_id, embedding <=> %s::vector, "
                 "frame_timestamp_seconds NULLS FIRST, id) best "
                 "ORDER BY score DESC, asset_id LIMIT %s",
-                (query, model_version, query, limit),
+                (query, model_version, asset_ids, asset_ids, query, limit),
             ).fetchall()
         return [Match(row[0], row[1], row[2]) for row in rows]
+
+    def similar(self, asset_id, model_version, limit, asset_ids=None):
+        with connection(self.settings) as conn:
+            # An image vector, or a sampled video frame, provides the reference.
+            row = conn.execute(
+                "SELECT embedding::text FROM asset_vectors WHERE asset_id=%s AND model_version=%s "
+                "ORDER BY frame_timestamp_seconds NULLS FIRST LIMIT 1",
+                (asset_id, model_version),
+            ).fetchone()
+        if row is None:
+            raise ValueError("Asset has no vectors")
+        import json
+
+        matches = self.search_assets(tuple(json.loads(row[0])), model_version, limit + 1, asset_ids)
+        return [match for match in matches if match.asset_id != asset_id][:limit]

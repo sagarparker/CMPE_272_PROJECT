@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     )
     db_connect_timeout_seconds: int = Field(default=5, ge=1, le=60)
     db_statement_timeout_ms: int = Field(default=15000, ge=1, le=300000)
+    production_mode: bool = False
+    azure_storage_account: str = Field(default="", pattern=r"^([a-z0-9]{3,24})?$")
+    azure_storage_container: str = "mediamesh"
+    azure_emulator_endpoint: str = ""
     media_root: Path = Path("/data/media")
     media_max_bytes: int = Field(default=100_000_000, ge=1)
     model_cache: Path = Path("/data/models")
@@ -34,6 +38,8 @@ class Settings(BaseSettings):
     video_max_pixels: int = Field(default=8_294_400, ge=1)
     video_temp_root: Path = Path("/tmp")
     video_timeout_seconds: float = Field(default=120, gt=0)
+    video_playback_max_edge: int = Field(default=1920, ge=16, le=3840)
+    video_playback_timeout_seconds: float = Field(default=300, gt=0)
 
     def model_post_init(self, __context: object) -> None:
         # Validate without including credentials in a validation error or repr.

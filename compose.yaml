@@ -1,0 +1,160 @@
+name: mediamesh
+x-ml: &ml
+  build: &ml-build
+    context: ./ml-service
+    target: runtime
+    additional_contexts:
+      migrations: ./backend/src/main/resources/db/migration
+  image: mediamesh-ml:integrated
+  init: true
+  environment: &ml-env
+    ML_DATABASE_URL: postgresql://mediamesh:local-development-only@postgres:5432/mediamesh
+    ML_PRODUCTION_MODE: "true"
+    ML_AZURE_EMULATOR_ENDPOINT: http://azurite:10000/devstoreaccount1
+    ML_AZURE_STORAGE_CONTAINER: mediamesh
+    HF_HOME: /data/models
+    ML_MODEL_CACHE: /data/models
+  volumes:
+    - model-cache:/data/models
+  depends_on:
+    backend:
+      condition: service_healthy
+services:
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=35d
+    ports: ["127.0.0.1:9090:9090"]
+    volumes:
+      - ./infra/prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      backend:
+        condition: service_healthy
+  postgres-test:
+    image: pgvector/pgvector:pg17-bookworm
+    profiles: [test]
+    environment:
+      POSTGRES_USER: mediamesh
+      POSTGRES_PASSWORD: local-test-only
+      POSTGRES_DB: mediamesh_test
+    tmpfs: [/var/lib/postgresql/data]
+    volumes: [./infra/test-databases.sql:/docker-entrypoint-initdb.d/test-databases.sql:ro]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U mediamesh -d mediamesh_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  ml-tests:
+    profiles: [test]
+    build:
+      context: ./ml-service
+      target: tools
+      additional_contexts:
+        migrations: ./backend/src/main/resources/db/migration
+    environment:
+      ML_TEST_DATABASE_URL: postgresql://mediamesh:local-test-only@postgres-test:5432/mediamesh_test
+      ML_PRODUCTION_TEST_DATABASE_URL: postgresql://mediamesh:local-test-only@postgres-test:5432/mediamesh_production_test
+    volumes:
+      - ./backend/src/main/resources/db/migration:/catalog-migrations:ro
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+  postgres:
+    image: pgvector/pgvector:pg17-bookworm
+    environment:
+      POSTGRES_USER: mediamesh
+      POSTGRES_PASSWORD: local-development-only
+      POSTGRES_DB: mediamesh
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U mediamesh"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0.7
+    command: [start-dev, --import-realm]
+    environment:
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_HOSTNAME: http://localhost:8080/auth
+      KC_PROXY_HEADERS: xforwarded
+      KC_BOOTSTRAP_ADMIN_USERNAME: local-admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: local-development-only
+    volumes:
+      - ./infra/keycloak:/opt/keycloak/data/import:ro
+      - keycloak-data:/opt/keycloak/data
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.38.0
+    command: [azurite-blob, --blobHost, 0.0.0.0, --location, /data, --silent]
+    ports: ["127.0.0.1:10000:10000"]
+    volumes: [blob-data:/data]
+    healthcheck:
+      test: [CMD, node, -e, "const s=require('net').connect(10000,'127.0.0.1',()=>s.end());s.on('error',()=>process.exit(1));"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  blob-init:
+    build: *ml-build
+    image: mediamesh-ml:integrated
+    command: [python, -m, mediamesh_ml.local_blob]
+    environment:
+      ML_AZURE_EMULATOR_ENDPOINT: http://azurite:10000/devstoreaccount1
+      ML_AZURE_STORAGE_CONTAINER: mediamesh
+    depends_on:
+      azurite: {condition: service_healthy}
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: jdbc:postgresql://postgres:5432/mediamesh
+      DATABASE_USERNAME: mediamesh
+      DATABASE_PASSWORD: local-development-only
+      OIDC_ISSUER: http://localhost:8080/auth/realms/mediamesh
+      OIDC_JWKS: http://keycloak:8080/auth/realms/mediamesh/protocol/openid-connect/certs
+      BOOTSTRAP_ADMIN_SUBJECT: 00000000-0000-0000-0000-000000000001
+      KEYCLOAK_URL: http://keycloak:8080/auth
+      KEYCLOAK_PROVISIONER_SECRET: local-provisioner-only
+      AZURE_EMULATOR_ENDPOINT: http://azurite:10000/devstoreaccount1
+      AZURE_STORAGE_PUBLIC_ENDPOINT: http://localhost:10000/devstoreaccount1
+      AZURE_STORAGE_CONTAINER: mediamesh
+      ML_URL: http://ml-api:8000
+      MANAGEMENT_SERVER_ADDRESS: 0.0.0.0
+      ML_REQUEST_TIMEOUT: ${ML_REQUEST_TIMEOUT:-1500ms}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      blob-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD-SHELL, "bash -c 'echo > /dev/tcp/localhost/8080'"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+  ml-api:
+    <<: *ml
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready',timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 120s
+  ml-worker:
+    <<: *ml
+    command: [python, -m, mediamesh_ml.worker]
+    stop_grace_period: 150s
+  frontend:
+    build: ./frontend
+    ports: ["127.0.0.1:8080:80"]
+    depends_on:
+      backend:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+volumes:
+  postgres-data:
+  keycloak-data:
+  blob-data:
+  model-cache:
+  prometheus-data:

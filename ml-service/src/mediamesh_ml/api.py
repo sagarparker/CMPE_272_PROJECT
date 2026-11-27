@@ -13,7 +13,14 @@ from starlette.exceptions import HTTPException
 from mediamesh_ml.config import Settings
 from mediamesh_ml.contracts import InvalidQuery
 from mediamesh_ml.embeddings import ClipEngine
-from mediamesh_ml.schemas import ErrorResponse, SearchMatch, SearchRequest, SearchResponse
+from mediamesh_ml.logging_json import RequestCorrelationMiddleware, configure_logging
+from mediamesh_ml.schemas import (
+    ErrorResponse,
+    SearchMatch,
+    SearchRequest,
+    SearchResponse,
+    SimilarRequest,
+)
 from mediamesh_ml.search import SearchService
 from mediamesh_ml.vectors import PgVectorRepository
 
@@ -26,10 +33,7 @@ def error_response(status, code, message):
 
 def create_app(settings: Settings | None = None, *, search_service=None) -> FastAPI:
     settings = settings or Settings()
-    logging.basicConfig(
-        level=settings.log_level.upper(),
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    )
+    configure_logging(settings.log_level.upper())
     service = (
         search_service
         if search_service is not None
@@ -46,6 +50,7 @@ def create_app(settings: Settings | None = None, *, search_service=None) -> Fast
         yield
 
     app = FastAPI(title="MediaMesh ML", version="0.1.0", lifespan=lifespan)
+    app.add_middleware(RequestCorrelationMiddleware)
     app.state.settings = settings
     app.state.search_service = service
 
@@ -88,7 +93,11 @@ def create_app(settings: Settings | None = None, *, search_service=None) -> Fast
     )
     def search(body: SearchRequest):
         try:
-            matches = service.search(body.query, body.limit)
+            matches = (
+                service.search(body.query, body.limit)
+                if body.asset_ids is None
+                else service.search(body.query, body.limit, body.asset_ids)
+            )
             return SearchResponse(
                 matches=[
                     SearchMatch(
@@ -103,6 +112,26 @@ def create_app(settings: Settings | None = None, *, search_service=None) -> Fast
             return error_response(400, "INVALID_INPUT", "Invalid request input")
         except Exception as error:
             logger.warning("Search failed: %s", type(error).__name__)
+            return error_response(503, "SEARCH_UNAVAILABLE", "Search dependencies are unavailable")
+
+    @app.post("/internal/similar", response_model=SearchResponse)
+    def similar(body: SimilarRequest):
+        try:
+            matches = service.similar(body.asset_id, body.limit, body.asset_ids)
+            return SearchResponse(
+                matches=[
+                    SearchMatch(
+                        asset_id=row.asset_id,
+                        score=row.score,
+                        frame_timestamp_seconds=row.frame_timestamp_seconds,
+                    )
+                    for row in matches
+                ]
+            )
+        except ValueError:
+            return error_response(404, "NOT_FOUND", "Asset has no indexed vectors")
+        except Exception as error:
+            logger.warning("Similar search failed: %s", type(error).__name__)
             return error_response(503, "SEARCH_UNAVAILABLE", "Search dependencies are unavailable")
 
     def contract_openapi():

@@ -1,0 +1,22 @@
+{
+  "name": "mediamesh-portal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "test": "node --test src/*.test.js",
+    "test:e2e": "playwright test",
+    "seed:demo": "node scripts/seed-demo.mjs"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "keycloak-js": "^26.0.0"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0",
+    "@playwright/test": "^1.51.0"
+  }
+}

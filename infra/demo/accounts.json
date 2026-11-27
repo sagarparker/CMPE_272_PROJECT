@@ -1,0 +1,82 @@
+{
+  "localDemoPassword": "local-demo-only",
+  "accounts": [
+    {
+      "domain": "wildlife",
+      "username": "demo.wildlife",
+      "id": "e2f23e73-c1d5-505e-9ac9-d31458165e2d",
+      "firstName": "Wildlife",
+      "lastName": "Demo Contributor",
+      "email": "demo.wildlife@mediamesh.local",
+      "roles": [
+        "UPLOADER"
+      ]
+    },
+    {
+      "domain": "plants",
+      "username": "demo.plants",
+      "id": "0e1732c3-7a2e-5e8b-864f-38736b363e42",
+      "firstName": "Plants",
+      "lastName": "Demo Contributor",
+      "email": "demo.plants@mediamesh.local",
+      "roles": [
+        "UPLOADER"
+      ]
+    },
+    {
+      "domain": "oceans",
+      "username": "demo.oceans",
+      "id": "446f3b4b-ee6d-5297-a1b5-07b1b7d21b4c",
+      "firstName": "Oceans",
+      "lastName": "Demo Contributor",
+      "email": "demo.oceans@mediamesh.local",
+      "roles": [
+        "UPLOADER"
+      ]
+    },
+    {
+      "domain": "marine",
+      "username": "demo.marine",
+      "id": "5f77d9d5-818d-52a8-ad66-34d69fc6d6b4",
+      "firstName": "Marine",
+      "lastName": "Demo Contributor",
+      "email": "demo.marine@mediamesh.local",
+      "roles": [
+        "UPLOADER"
+      ]
+    },
+    {
+      "domain": "birds",
+      "username": "demo.birds",
+      "id": "2d436fe7-89b5-54d1-b4b3-164b9b1561ec",
+      "firstName": "Birds",
+      "lastName": "Demo Contributor",
+      "email": "demo.birds@mediamesh.local",
+      "roles": [
+        "UPLOADER"
+      ]
+    },
+    {
+      "domain": "landscapes",
+      "username": "demo.landscapes",
+      "id": "2b0c0ed9-f627-5c36-bec4-312b1aa2bf8c",
+      "firstName": "Landscapes",
+      "lastName": "Demo Contributor",
+      "email": "demo.landscapes@mediamesh.local",
+      "roles": [
+        "UPLOADER"
+      ]
+    },
+    {
+      "domain": null,
+      "username": "demo.researcher",
+      "id": "f6d79549-e841-5ad1-ae29-d70f064a6689",
+      "firstName": "Nature",
+      "lastName": "Demo Researcher",
+      "email": "demo.researcher@mediamesh.local",
+      "roles": [
+        "RESEARCHER"
+      ]
+    }
+  ]
+}

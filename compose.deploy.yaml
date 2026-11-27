@@ -1,0 +1,132 @@
+# Standalone: never merge with the localhost/demo Compose file.
+name: mediamesh-deploy
+x-service: &service
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: {max-size: 10m, max-file: "3"}
+x-ml: &ml
+  <<: *service
+  build:
+    context: ./ml-service
+    target: runtime
+    additional_contexts:
+      migrations: ./backend/src/main/resources/db/migration
+  image: mediamesh-ml:release
+  init: true
+  environment: &ml-env
+    ML_DATABASE_URL: postgresql://mediamesh:${DATABASE_PASSWORD:?Run prepare.py}@postgres:5432/mediamesh
+    ML_PRODUCTION_MODE: "true"
+    ML_AZURE_STORAGE_ACCOUNT: ${AZURE_STORAGE_ACCOUNT:?Set AZURE_STORAGE_ACCOUNT}
+    ML_AZURE_STORAGE_CONTAINER: ${AZURE_STORAGE_CONTAINER:-mediamesh}
+    HF_HOME: /data/models
+    ML_MODEL_CACHE: /data/models
+  volumes: [model-cache:/data/models]
+  depends_on:
+    backend: {condition: service_healthy}
+services:
+  edge:
+    <<: *service
+    image: caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
+    ports: ["80:80", "443:443"]
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL}
+    volumes:
+      - ./infra/deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [frontend, keycloak]
+  frontend:
+    <<: *service
+    build: ./frontend
+    depends_on:
+      backend: {condition: service_healthy}
+  postgres:
+    <<: *service
+    image: pgvector/pgvector:pg17-bookworm
+    environment:
+      POSTGRES_USER: mediamesh
+      POSTGRES_DB: mediamesh
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?Run prepare.py}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?Run prepare.py}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/deploy/init-db.sh:/docker-entrypoint-initdb.d/01-keycloak.sh:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U mediamesh -d mediamesh"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+  keycloak:
+    <<: *service
+    image: quay.io/keycloak/keycloak:26.8.2@sha256:7e66a96e4739239070aeaf72e4c5decf0f7f682cfc725b9f7ea2b336eaba38b3
+    command: [start, --import-realm]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?Run prepare.py}
+      KC_HTTP_ENABLED: "true"
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_HOSTNAME: https://${APP_DOMAIN:?Set APP_DOMAIN}/auth
+      KC_PROXY_HEADERS: xforwarded
+      KC_BOOTSTRAP_ADMIN_USERNAME: deployment-admin
+      # Needed for the first start; may be removed after permanent admin setup.
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-}
+    volumes:
+      - ./infra/deploy/runtime/realm:/opt/keycloak/data/import:ro
+    depends_on:
+      postgres: {condition: service_healthy}
+  backend:
+    <<: *service
+    build: ./backend
+    environment:
+      DATABASE_URL: jdbc:postgresql://postgres:5432/mediamesh
+      DATABASE_USERNAME: mediamesh
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Run prepare.py}
+      OIDC_ISSUER: https://${APP_DOMAIN:?Set APP_DOMAIN}/auth/realms/mediamesh
+      OIDC_JWKS: http://keycloak:8080/auth/realms/mediamesh/protocol/openid-connect/certs
+      BOOTSTRAP_ADMIN_SUBJECT: ${BOOTSTRAP_ADMIN_SUBJECT:?Run prepare.py}
+      KEYCLOAK_URL: http://keycloak:8080/auth
+      KEYCLOAK_PROVISIONER_SECRET: ${KEYCLOAK_PROVISIONER_SECRET:?Run prepare.py or add the provisioner client}
+      AZURE_STORAGE_ACCOUNT: ${AZURE_STORAGE_ACCOUNT:?Set AZURE_STORAGE_ACCOUNT}
+      AZURE_STORAGE_CONTAINER: ${AZURE_STORAGE_CONTAINER:-mediamesh}
+      ML_URL: http://ml-api:8000
+      MANAGEMENT_SERVER_ADDRESS: 0.0.0.0
+      ML_REQUEST_TIMEOUT: ${ML_REQUEST_TIMEOUT:-1500ms}
+    depends_on:
+      postgres: {condition: service_healthy}
+    healthcheck:
+      test: [CMD-SHELL, "bash -c 'echo > /dev/tcp/localhost/8080'"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+  ml-api:
+    <<: *ml
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready',timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 90
+      start_period: 120s
+  ml-worker:
+    <<: *ml
+    command: [python, -m, mediamesh_ml.worker]
+    stop_grace_period: 150s
+  prometheus:
+    <<: *service
+    image: prom/prometheus:v3.5.0
+    command: [--config.file=/etc/prometheus/prometheus.yml, --storage.tsdb.path=/prometheus, --storage.tsdb.retention.time=35d]
+    ports: ["127.0.0.1:9091:9090"]
+    volumes:
+      - ./infra/prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      backend: {condition: service_healthy}
+volumes:
+  postgres-data:
+  model-cache:
+  prometheus-data:
+  caddy-data:
+  caddy-config:

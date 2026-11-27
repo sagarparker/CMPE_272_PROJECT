@@ -21,6 +21,10 @@ class VideoInfo:
     duration_seconds: float
     width: int
     height: int
+    hdr: bool = False
+
+
+HDR_TRANSFERS = {"smpte2084", "arib-std-b67"}  # PQ and HLG
 
 
 @dataclass(frozen=True)
@@ -67,7 +71,7 @@ class VideoSampler:
                 "-select_streams",
                 "v:0",
                 "-show_entries",
-                "stream=width,height,duration:format=duration",
+                "stream=width,height,duration,color_transfer:format=duration",
                 "-of",
                 "json",
                 str(path),
@@ -80,7 +84,12 @@ class VideoSampler:
             duration = stream.get("duration")
             if duration in {None, "N/A"}:
                 duration = data.get("format", {}).get("duration")
-            info = VideoInfo(float(duration), int(stream["width"]), int(stream["height"]))
+            info = VideoInfo(
+                float(duration),
+                int(stream["width"]),
+                int(stream["height"]),
+                stream.get("color_transfer") in HDR_TRANSFERS,
+            )
         except (KeyError, IndexError, TypeError, ValueError):
             raise ValueError("Video must have a valid duration and video stream") from None
         if not math.isfinite(info.duration_seconds) or not (

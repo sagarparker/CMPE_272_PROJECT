@@ -1,6 +1,8 @@
 # Pinned Python + uv base; update deliberately when refreshing dependencies.
 FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim@sha256:4f5d923c9dcea037f57bda425dd209f3ec643da2f0b74227f68d09dab0b3bb36 AS base
-ENV PYTHONDONTWRITEBYTECODE=1 \
+ENV HF_HUB_DISABLE_PROGRESS_BARS=1 \
+    TQDM_DISABLE=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_LINK_MODE=copy \
     PATH="/app/.venv/bin:$PATH" \
@@ -20,6 +22,7 @@ RUN uv sync --no-cache --locked --no-dev --no-install-project
 COPY --chown=app:app src ./src
 COPY --from=migrations --chown=app:app V3*.sql ./migrations/
 RUN uv sync --no-cache --locked --no-dev --no-editable
+ENV HF_HUB_ETAG_TIMEOUT=10 HF_HUB_DOWNLOAD_TIMEOUT=30
 EXPOSE 8000
 CMD ["uvicorn", "mediamesh_ml.api:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
 

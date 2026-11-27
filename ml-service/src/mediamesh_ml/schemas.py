@@ -10,6 +10,8 @@ class SearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=1000, strict=True)
     limit: int = Field(default=20, ge=1, le=100, strict=True)
 
+    asset_ids: list[UUID] | None = Field(default=None, alias="assetIds", max_length=100000)
+
     @field_validator("query", mode="before")
     @classmethod
     def strip_query(cls, value):
@@ -36,3 +38,10 @@ class ErrorDetail(BaseModel):
 
 class ErrorResponse(BaseModel):
     error: ErrorDetail
+
+
+class SimilarRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    asset_id: UUID = Field(alias="assetId")
+    limit: int = Field(default=10, ge=1, le=100, strict=True)
+    asset_ids: list[UUID] | None = Field(default=None, alias="assetIds", max_length=100000)

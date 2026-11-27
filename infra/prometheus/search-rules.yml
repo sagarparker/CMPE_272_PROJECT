@@ -1,0 +1,58 @@
+groups:
+  - name: mediamesh-search
+    interval: 15s
+    rules:
+      - record: mediamesh:search:slo_target
+        expr: vector(0.99)
+      - record: mediamesh:search:observation_heartbeat
+        expr: vector(1)
+      - record: mediamesh:search:history_complete
+        expr: |
+          (count_over_time(mediamesh:search:observation_heartbeat[30d]) >= bool 172800)
+          * (min(count_over_time(up{job="mediamesh-api"}[30d])) >= bool 172800)
+          * min(min_over_time(up{job="mediamesh-api"}[30d]))
+          or vector(0)
+      - record: mediamesh:search:valid_30d
+        expr: sum(increase(mediamesh_search_requests_total{job="mediamesh-api"}[30d])) or vector(0)
+      - record: mediamesh:search:good_30d
+        expr: sum(increase(mediamesh_search_good_total{job="mediamesh-api"}[30d])) or vector(0)
+      - record: mediamesh:search:bad_30d
+        expr: mediamesh:search:valid_30d - mediamesh:search:good_30d
+      - record: mediamesh:search:sli_30d
+        expr: (mediamesh:search:good_30d / mediamesh:search:valid_30d) and (mediamesh:search:valid_30d > 0)
+      - record: mediamesh:search:allowed_bad_30d
+        expr: mediamesh:search:valid_30d * 0.01
+      - record: mediamesh:search:remaining_bad_30d
+        expr: mediamesh:search:allowed_bad_30d - mediamesh:search:bad_30d
+      - record: mediamesh:search:budget_remaining_percent
+        expr: |
+          (100 * mediamesh:search:remaining_bad_30d / mediamesh:search:allowed_bad_30d)
+          and (mediamesh:search:valid_30d > 0)
+      - record: mediamesh:search:budget_consumed_percent
+        expr: 100 - mediamesh:search:budget_remaining_percent
+      - record: mediamesh:search:budget_policy
+        expr: |
+          (1 * (mediamesh:search:budget_remaining_percent >= bool 50)
+          + 2 * ((mediamesh:search:budget_remaining_percent > bool 0) * (mediamesh:search:budget_remaining_percent < bool 50))
+          + 3 * (mediamesh:search:budget_remaining_percent <= bool 0)) or vector(0)
+      - record: mediamesh:search:burn_rate_1h
+        expr: |
+          ((sum(rate(mediamesh_search_requests_total{job="mediamesh-api"}[1h]))
+          - sum(rate(mediamesh_search_good_total{job="mediamesh-api"}[1h])))
+          / sum(rate(mediamesh_search_requests_total{job="mediamesh-api"}[1h])) / 0.01)
+          and (sum(rate(mediamesh_search_requests_total{job="mediamesh-api"}[1h])) > 0)
+      - record: mediamesh:search:burn_rate_5m
+        expr: |
+          ((sum(rate(mediamesh_search_requests_total{job="mediamesh-api"}[5m]))
+          - sum(rate(mediamesh_search_good_total{job="mediamesh-api"}[5m])))
+          / sum(rate(mediamesh_search_requests_total{job="mediamesh-api"}[5m])) / 0.01)
+          and (sum(rate(mediamesh_search_requests_total{job="mediamesh-api"}[5m])) > 0)
+      - alert: MediaMeshSearchHighErrorBudgetBurn
+        expr: (mediamesh:search:burn_rate_1h >= 14.4) and (mediamesh:search:burn_rate_5m >= 14.4)
+        labels:
+          severity: page
+          service: mediamesh-search
+        annotations:
+          summary: Semantic search is consuming its error budget rapidly
+          description: 'The 99% search SLO has a 1h burn rate of {{ $value }}x and a 5m burn rate of at least 14.4x. Check search failure categories, mlSearch breaker state, bulkhead permits, ML readiness, and database latency. No notification receiver is configured.'
+          runbook: docs/observability/SLO_ERROR_BUDGET.md

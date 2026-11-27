@@ -90,7 +90,9 @@ class JobStore(Protocol):
 
     def claim(self) -> ClaimedJob | None: ...
 
-    def complete(self, job: ClaimedJob, records: Sequence[VectorRecord]) -> None:
+    def complete(
+        self, job: ClaimedJob, records: Sequence[VectorRecord], *, playback_key: str | None = None
+    ) -> None:
         """Fence stale claims; commit vectors and job/asset success atomically."""
         ...
 

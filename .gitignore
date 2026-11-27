@@ -1,1 +1,14 @@
 /ml-service/IMPLEMENTATION_PLAN.md
+/backend/target/
+/frontend/node_modules/
+/frontend/dist/
+/frontend/test-results/
+/frontend/playwright-report/
+/.env
+/.env.*
+!/.env.example
+/security-reports/
+/infra/security/__pycache__/
+/infra/deploy/runtime/
+/infra/deploy/__pycache__/
+/backups/

@@ -12,6 +12,7 @@ def connection(settings: Settings):
     with psycopg.connect(
         settings.database_url.get_secret_value(),
         connect_timeout=settings.db_connect_timeout_seconds,
+        tcp_user_timeout=15000,
         options=(f"-c statement_timeout={settings.db_statement_timeout_ms} -c lock_timeout=5000"),
     ) as conn:
         yield conn

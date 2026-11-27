@@ -7,7 +7,7 @@ PostgreSQL/pgvector persistence, and an internal FastAPI semantic-search API.
 **Implemented:** steps 1–7, including image/video indexing, a leased worker,
 retry handling, best-frame ranking, and the original search response contract.
 **Future:** similar-media recommendations, production Spring Boot job/status and
-private-S3 integration, shared CI/orchestration, and deployment acceptance.
+private-Blob integration, shared CI/orchestration, and deployment acceptance.
 
 The current application runs locally. ML-only mode starts **PostgreSQL, the ML
 API, and the worker**. The dummy frontend is optional. The current queue adapter
@@ -596,7 +596,7 @@ curl --fail http://127.0.0.1:8001/internal/search \
 - Return one candidate per asset with its best-scoring frame, then apply `limit`.
   Ties are deterministic. Images use `null`; videos use numeric seconds.
 - Scores are cosine similarities, can be negative, and are not probabilities.
-- No embeddings, metadata, user information, or S3 URLs are returned.
+- No embeddings, metadata, user information, or signed storage URLs are returned.
 - Empty index: `200` with `{"matches":[]}`.
 - Invalid input: `400`, including empty/non-string queries, invalid limits,
   unknown fields, malformed JSON, and text exceeding the CLIP token budget.
@@ -730,7 +730,7 @@ flowchart LR
     subgraph Future["Future team integration"]
         React["Production React portal"]
         Spring["Spring Boot<br/>JWT / RBAC / catalog / public APIs"]
-        S3[("Private S3 media")]
+        BLOB[("Private Azure Blob media")]
     end
     subgraph ML["Reusable ML components"]
         API["Internal ML API"]
@@ -740,20 +740,20 @@ flowchart LR
     React -.-> Spring
     Spring -.-> API
     Spring -.-> DB
-    Spring -.-> S3
-    React -.-> S3
-    Worker -.-> S3
+    Spring -.-> BLOB
+    React -.-> BLOB
+    Worker -.-> BLOB
     API --> DB
     Worker --> DB
 ```
 
-The intended integrated upload path is Spring Boot authorization → scoped S3
-upload → upload completion/job creation → worker S3 retrieval → embedding/index →
+The intended integrated upload path is Spring Boot authorization → scoped Blob
+upload → upload completion/job creation → worker Blob retrieval → embedding/index →
 READY. Search flows React → Spring Boot authorization → internal ML retrieval →
 Spring metadata/status filtering and enrichment → authorized preview/download.
-The React-to-S3 connection represents a backend-issued, scoped presigned URL.
+The React-to-Blob connection represents a backend-issued, scoped presigned URL.
 
-Production S3 retrieval, teammate 2's job/status adapter and UUID FK agreement,
+Production Blob retrieval, teammate 2's job/status adapter and UUID FK agreement,
 the embed-media handoff, and shared orchestration/CI remain integration work.
 Step 8 adds `/internal/similar` through existing embeddings/ranking. Step 9
 completes integration, performance/deployment validation, and operational setup.
@@ -811,3 +811,13 @@ ml-service/
 - [Dummy frontend guide](dev-ui/README.md)
 - [Model requirements and observed performance](MODEL.md)
 - [Evaluation/data guide](evaluation/README.md)
+
+## Azure cloud media source
+
+Production mode selects Azure Blob downloads.
+Set `ML_AZURE_STORAGE_ACCOUNT` and `ML_AZURE_STORAGE_CONTAINER`; the VM's
+system-assigned managed identity supplies temporary credentials. Downloads are
+limited by the existing maximum byte count, checked against the source ETag,
+streamed into temporary files and cleaned after indexing or failure. Socket
+timeouts/retries are bounded. The local stack uses Azurite and retains its migrated assets.
+Use the shared [Azure deployment runbook](../infra/deploy/README.md).

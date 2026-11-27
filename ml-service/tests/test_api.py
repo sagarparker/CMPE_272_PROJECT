@@ -38,7 +38,7 @@ def test_liveness_and_honest_readiness(client):
 
 
 def test_future_routes_are_not_fake_implementations(client):
-    for path in ("/internal/similar", "/internal/embed-media"):
+    for path in ("/internal/embed-media",):
         response = client.post(path, json={})
         assert response.status_code == 404
         assert response.json()["error"]["code"] == "HTTP_404"
@@ -167,3 +167,7 @@ def test_openapi_documents_400_instead_of_422(client):
     responses = client.get("/openapi.json").json()["paths"]["/internal/search"]["post"]["responses"]
     assert "400" in responses and "503" in responses
     assert "422" not in responses
+
+
+def test_similar_requires_valid_input(client):
+    assert client.post("/internal/similar", json={}).status_code == 400

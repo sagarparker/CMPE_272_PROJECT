@@ -30,9 +30,22 @@ class SearchService:
             logger.warning("Search dependency unavailable: %s", type(error).__name__)
             return False
 
-    def search(self, query: str, limit: int):
+    def search(self, query: str, limit: int, asset_ids=None):
         if not self.is_ready():
             raise SearchUnavailable("Search dependencies are unavailable")
         with self._inference_lock:
             vector = self.engine.encode_text(query)
-        return self.repository.search_assets(vector, embedding_version(self.engine.identity), limit)
+        if asset_ids is None:
+            return self.repository.search_assets(
+                vector, embedding_version(self.engine.identity), limit
+            )
+        return self.repository.search_assets(
+            vector, embedding_version(self.engine.identity), limit, asset_ids
+        )
+
+    def similar(self, asset_id, limit, asset_ids=None):
+        if not self.is_ready():
+            raise SearchUnavailable("Search dependencies are unavailable")
+        return self.repository.similar(
+            asset_id, embedding_version(self.engine.identity), limit, asset_ids
+        )

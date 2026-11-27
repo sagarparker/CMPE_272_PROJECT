@@ -1,4 +1,4 @@
-"""Standalone local job adapter. Production job integration remains a backend handoff."""
+"""Leased PostgreSQL job store for production catalogs and isolated local fixtures."""
 
 import argparse
 import json
@@ -33,11 +33,16 @@ def initialize_local_jobs(settings: Settings):
         conn.execute(Path("dev/bootstrap_jobs.sql").read_text(), prepare=False)
 
 
-class LocalJobStore:
+class PostgresJobStore:
     def __init__(self, settings: Settings):
         self.settings = settings
+        self.jobs_table = "public.index_jobs" if settings.production_mode else "ml_dev.index_jobs"
+        self.states_table = "public.assets" if settings.production_mode else "ml_dev.asset_states"
+        self.state_key = "id" if settings.production_mode else "asset_id"
 
     def enqueue(self, asset_id: UUID, reference: str, media_type: str) -> UUID:
+        if self.settings.production_mode:
+            raise ValueError("Production jobs must be created through the backend upload API")
         if not reference.strip() or media_type not in {"image", "video"}:
             raise ValueError("Expected a media reference and image/video type")
         with connection(self.settings) as conn:
@@ -46,7 +51,7 @@ class LocalJobStore:
             ).fetchone():
                 raise ValueError("Register the local asset before enqueueing")
             active = conn.execute(
-                "SELECT id, media_reference, media_type FROM ml_dev.index_jobs "
+                f"SELECT id, media_reference, media_type FROM {self.jobs_table} "
                 "WHERE asset_id=%s AND status IN ('PENDING','PROCESSING')",
                 (asset_id,),
             ).fetchone()
@@ -56,12 +61,12 @@ class LocalJobStore:
                 return active[0]
             job_id = uuid4()
             conn.execute(
-                "INSERT INTO ml_dev.index_jobs(id, asset_id, media_reference, media_type, "
+                f"INSERT INTO {self.jobs_table}(id, asset_id, media_reference, media_type, "
                 "max_attempts) VALUES (%s,%s,%s,%s,%s)",
                 (job_id, asset_id, reference, media_type, self.settings.job_max_attempts),
             )
             conn.execute(
-                "INSERT INTO ml_dev.asset_states VALUES (%s,'PROCESSING') "
+                f"INSERT INTO {self.states_table} VALUES (%s,'PROCESSING') "
                 "ON CONFLICT (asset_id) DO UPDATE SET processing_status='PROCESSING'",
                 (asset_id,),
             )
@@ -69,20 +74,20 @@ class LocalJobStore:
 
     def _recover(self, conn):
         expired = conn.execute(
-            "SELECT id, asset_id, attempts, max_attempts FROM ml_dev.index_jobs "
+            f"SELECT id, asset_id, attempts, max_attempts FROM {self.jobs_table} "
             "WHERE status='PROCESSING' AND lease_expires_at<=clock_timestamp() "
             "ORDER BY lease_expires_at LIMIT 100 FOR UPDATE SKIP LOCKED"
         ).fetchall()
         for jid, aid, attempts, maximum in expired:
             terminal = attempts >= maximum
             conn.execute(
-                "UPDATE ml_dev.index_jobs SET status=%s, claim_token=NULL, lease_expires_at=NULL, "
+                f"UPDATE {self.jobs_table} SET status=%s, claim_token=NULL, lease_expires_at=NULL, "
                 "available_at=clock_timestamp()+(%s * interval '1 second'), "
                 "last_error='LeaseExpired' WHERE id=%s",
                 ("FAILED" if terminal else "PENDING", self._delay(attempts), jid),
             )
             conn.execute(
-                "UPDATE ml_dev.asset_states SET processing_status=%s WHERE asset_id=%s",
+                f"UPDATE {self.states_table} SET processing_status=%s WHERE {self.state_key}=%s",
                 ("FAILED" if terminal else "PROCESSING", aid),
             )
 
@@ -97,7 +102,7 @@ class LocalJobStore:
             self._recover(conn)
             row = conn.execute(
                 "SELECT id, asset_id, media_reference, media_type, attempts "
-                "FROM ml_dev.index_jobs WHERE status='PENDING' AND attempts<max_attempts "
+                f"FROM {self.jobs_table} WHERE status='PENDING' AND attempts<max_attempts "
                 "AND available_at<=clock_timestamp() ORDER BY available_at, created_at, id "
                 "LIMIT 1 FOR UPDATE SKIP LOCKED"
             ).fetchone()
@@ -105,7 +110,7 @@ class LocalJobStore:
                 return None
             token = uuid4()
             conn.execute(
-                "UPDATE ml_dev.index_jobs SET status='PROCESSING', attempts=attempts+1, "
+                f"UPDATE {self.jobs_table} SET status='PROCESSING', attempts=attempts+1, "
                 "claim_token=%s, lease_expires_at=clock_timestamp()+(%s * interval '1 second') "
                 "WHERE id=%s",
                 (token, self.settings.job_lease_seconds, row[0]),
@@ -116,7 +121,7 @@ class LocalJobStore:
         with connection(self.settings) as conn:
             return bool(
                 conn.execute(
-                    "UPDATE ml_dev.index_jobs SET lease_expires_at=clock_timestamp()+"
+                    f"UPDATE {self.jobs_table} SET lease_expires_at=clock_timestamp()+"
                     "(%s * interval '1 second') WHERE id=%s AND claim_token=%s "
                     "AND status='PROCESSING' AND lease_expires_at>clock_timestamp() RETURNING id",
                     (self.settings.job_lease_seconds, job.job_id, UUID(job.claim_token)),
@@ -125,7 +130,7 @@ class LocalJobStore:
 
     def _require_claim(self, conn, job):
         row = conn.execute(
-            "SELECT asset_id, media_type, attempts FROM ml_dev.index_jobs WHERE id=%s "
+            f"SELECT asset_id, media_type, attempts FROM {self.jobs_table} WHERE id=%s "
             "AND claim_token=%s AND status='PROCESSING' "
             "AND lease_expires_at>clock_timestamp() FOR UPDATE",
             (job.job_id, UUID(job.claim_token)),
@@ -133,7 +138,9 @@ class LocalJobStore:
         if not row or row != (job.asset_id, job.media_type, job.attempt):
             raise StaleClaim("Job lease is expired or no longer owned")
 
-    def complete(self, job: ClaimedJob, records: Sequence[VectorRecord]) -> None:
+    def complete(
+        self, job: ClaimedJob, records: Sequence[VectorRecord], *, playback_key: str | None = None
+    ) -> None:
         if not records:
             raise ValueError("Cannot mark an empty index READY")
         if job.media_type == "image" and (
@@ -146,14 +153,20 @@ class LocalJobStore:
             self._require_claim(conn, job)
             replace_in_transaction(conn, job.asset_id, records[0].model_version, records)
             conn.execute(
-                "UPDATE ml_dev.index_jobs SET status='SUCCEEDED', claim_token=NULL, "
+                f"UPDATE {self.jobs_table} SET status='SUCCEEDED', claim_token=NULL, "
                 "lease_expires_at=NULL, last_error=NULL WHERE id=%s",
                 (job.job_id,),
             )
             conn.execute(
-                "UPDATE ml_dev.asset_states SET processing_status='READY' WHERE asset_id=%s",
+                f"UPDATE {self.states_table} SET processing_status='READY' "
+                f"WHERE {self.state_key}=%s",
                 (job.asset_id,),
             )
+            if playback_key is not None and self.settings.production_mode:
+                conn.execute(
+                    "UPDATE public.assets SET playback_key=%s WHERE id=%s",
+                    (playback_key, job.asset_id),
+                )
 
     def fail(self, job: ClaimedJob, error: str, *, retryable: bool) -> None:
         # Persist error codes, never arbitrary media URLs, paths, or exception messages.
@@ -161,30 +174,36 @@ class LocalJobStore:
         with connection(self.settings) as conn:
             self._require_claim(conn, job)
             maximum = conn.execute(
-                "SELECT max_attempts FROM ml_dev.index_jobs WHERE id=%s", (job.job_id,)
+                f"SELECT max_attempts FROM {self.jobs_table} WHERE id=%s", (job.job_id,)
             ).fetchone()[0]
             terminal = not retryable or job.attempt >= maximum
             conn.execute(
-                "UPDATE ml_dev.index_jobs SET status=%s, last_error=%s, claim_token=NULL, "
+                f"UPDATE {self.jobs_table} SET status=%s, last_error=%s, claim_token=NULL, "
                 "lease_expires_at=NULL, available_at=clock_timestamp()+(%s * interval '1 second') "
                 "WHERE id=%s",
                 ("FAILED" if terminal else "PENDING", code, self._delay(job.attempt), job.job_id),
             )
             conn.execute(
-                "UPDATE ml_dev.asset_states SET processing_status=%s WHERE asset_id=%s",
+                f"UPDATE {self.states_table} SET processing_status=%s WHERE {self.state_key}=%s",
                 ("FAILED" if terminal else "PROCESSING", job.asset_id),
             )
 
     def status(self, job_id: UUID) -> dict:
         with connection(self.settings) as conn:
             row = conn.execute(
-                "SELECT status, attempts, max_attempts, last_error FROM ml_dev.index_jobs "
+                f"SELECT status, attempts, max_attempts, last_error FROM {self.jobs_table} "
                 "WHERE id=%s",
                 (job_id,),
             ).fetchone()
         if not row:
             raise ValueError("Job does not exist")
         return dict(zip(["status", "attempts", "maxAttempts", "lastError"], row, strict=True))
+
+
+# Preserve the standalone development import used by existing demos/tests.
+class LocalJobStore(PostgresJobStore):
+    def __init__(self, settings: Settings):
+        super().__init__(settings.model_copy(update={"production_mode": False}))
 
 
 def main():
