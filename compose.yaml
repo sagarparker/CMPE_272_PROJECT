@@ -6,15 +6,17 @@ x-ml: &ml
     additional_contexts:
       migrations: ./backend/src/main/resources/db/migration
   image: mediamesh-ml:integrated
+  pull_policy: build
   init: true
   environment: &ml-env
     ML_DATABASE_URL: postgresql://mediamesh:local-development-only@postgres:5432/mediamesh
     ML_PRODUCTION_MODE: "true"
     ML_EMBEDDING_MODEL: ${ML_EMBEDDING_MODEL:-embeddinggemma2}
     ML_VERIFY_CAPTIONS: ${ML_VERIFY_CAPTIONS:-true}
+    ML_VERIFICATION_TIMEOUT_SECONDS: ${ML_VERIFICATION_TIMEOUT_SECONDS:-30}
     ML_SEARCH_MIN_SIMILARITY: ${ML_SEARCH_MIN_SIMILARITY:-0.67}
-    ML_CAPTION_URL: ${ML_CAPTION_URL:-http://host.docker.internal:11434}
-    ML_CAPTION_MODEL: ${ML_CAPTION_MODEL:-gemma4:e2b-it-q4_K_M}
+    ML_CAPTION_URL: ${ML_CAPTION_URL:-http://ollama:11434}
+    ML_CAPTION_MODEL: ${ML_CAPTION_MODEL:-qwen3-vl:2b-instruct}
     ML_AZURE_EMULATOR_ENDPOINT: http://azurite:10000/devstoreaccount1
     ML_AZURE_STORAGE_CONTAINER: mediamesh
     HF_HOME: /data/models
@@ -22,13 +24,53 @@ x-ml: &ml
   volumes:
     - model-cache:/data/models
   depends_on:
+    ollama-init:
+      condition: service_completed_successfully
     gemma-embed:
       condition: service_healthy
     backend:
       condition: service_healthy
 services:
+  ollama:
+    image: ollama/ollama:0.40.2
+    environment:
+      OLLAMA_MAX_LOADED_MODELS: '1'
+      OLLAMA_NUM_PARALLEL: '1'
+    volumes:
+      - ollama-models:/root/.ollama
+    healthcheck:
+      test: [CMD, ollama, list]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  ollama-init:
+    image: ollama/ollama:0.40.2
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      ML_CAPTION_ENABLED: ${ML_CAPTION_ENABLED:-true}
+      ML_VERIFY_CAPTIONS: ${ML_VERIFY_CAPTIONS:-true}
+      ML_CAPTION_URL: ${ML_CAPTION_URL:-http://ollama:11434}
+      ML_CAPTION_MODEL: ${ML_CAPTION_MODEL:-qwen3-vl:2b-instruct}
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - |
+        enabled() {
+          case "$$1" in
+            1|[Tt]|[Tt][Rr][Uu][Ee]|[Oo][Nn]|[Yy]|[Yy][Ee][Ss]) return 0 ;;
+            *) return 1 ;;
+          esac
+        }
+        if [ "$${ML_CAPTION_URL%/}" = "$$OLLAMA_HOST" ] &&
+           { enabled "$$ML_CAPTION_ENABLED" || enabled "$$ML_VERIFY_CAPTIONS"; }; then
+          ollama show "$$ML_CAPTION_MODEL" >/dev/null 2>&1 || ollama pull "$$ML_CAPTION_MODEL"
+        fi
   gemma-embed:
     image: mediamesh-ml:integrated
+    build: *ml-build
+    pull_policy: build
     init: true
     command: [uvicorn, mediamesh_ml.gemma_server:create_app, --factory, --host, 0.0.0.0, --port, '8000']
     environment:
@@ -123,6 +165,7 @@ services:
   blob-init:
     build: *ml-build
     image: mediamesh-ml:integrated
+    pull_policy: build
     command: [python, -m, mediamesh_ml.local_blob]
     environment:
       ML_AZURE_EMULATOR_ENDPOINT: http://azurite:10000/devstoreaccount1
@@ -146,7 +189,7 @@ services:
       ML_URL: http://ml-api:8000
       ML_SEARCH_MIN_SIMILARITY: ${ML_SEARCH_MIN_SIMILARITY:-0.67}
       MANAGEMENT_SERVER_ADDRESS: 0.0.0.0
-      ML_REQUEST_TIMEOUT: ${ML_REQUEST_TIMEOUT:-8s}
+      ML_REQUEST_TIMEOUT: ${ML_REQUEST_TIMEOUT:-40s}
     depends_on:
       postgres:
         condition: service_healthy
@@ -170,8 +213,6 @@ services:
     environment:
       <<: *ml-env
       ML_CAPTION_ENABLED: ${ML_CAPTION_ENABLED:-true}
-      ML_CAPTION_URL: ${ML_CAPTION_URL:-http://host.docker.internal:11434}
-      ML_CAPTION_MODEL: ${ML_CAPTION_MODEL:-gemma4:e2b-it-q4_K_M}
     command: [python, -m, mediamesh_ml.worker]
     stop_grace_period: 360s
   frontend:
@@ -187,4 +228,5 @@ volumes:
   keycloak-data:
   blob-data:
   model-cache:
+  ollama-models:
   prometheus-data:

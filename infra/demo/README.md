@@ -105,9 +105,9 @@ or an official NatGeo collection. Review source terms before publication.
 
 ### Caption generation prerequisites
 
-`./infra/seed-demo.sh` now starts/rebuilds the local stack and enables captioning.
-Keep native Ollama running. The script pulls `gemma4:e2b-it-q4_K_M` if needed when
-using the default local endpoint, and checks image support before seeding.
+`./infra/seed-demo.sh` starts/rebuilds the local stack and enables captioning.
+The Compose initializer installs `qwen3-vl:2b-instruct` in the Ollama volume if
+needed. The seed script checks image support before seeding.
 For a different Ollama service, set `ML_CAPTION_URL` and `ML_CAPTION_MODEL`.
 A missing caption service or incomplete generation fails the seed run explicitly.
 
@@ -116,5 +116,5 @@ READY fixture assets receive any missing descriptions and current image/frame
 embeddings through `mediamesh_ml.seed_enrich`; their text embeddings are then
 refreshed. Existing generated descriptions and user-written metadata are kept.
 Only seed asset IDs are enriched, so unrelated uploads with missing media do not
-block a demo rerun. A fresh dataset can take several minutes; the READY wait
-allows 30 minutes and interrupted runs can resume.
+block a demo rerun. The READY wait gives a fresh dataset up to an hour for CPU
+inference. Interrupted runs can resume.

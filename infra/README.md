@@ -9,9 +9,10 @@ allow several GB for images/model cache. From the repository root:
 ./infra/start.sh
 ```
 
-Open http://localhost:8080. First start needs network access for images and
-the pinned Hugging Face CLIP model. Later starts reuse the `model-cache`
-volume. Follow readiness with `./infra/manage.sh logs ml-api ml-worker` or
+Open http://localhost:8080. First start downloads Docker images, EmbeddingGemma 2
+and the Ollama caption model. Later starts reuse the `model-cache` and
+`ollama-models` volumes. Follow readiness with
+`./infra/manage.sh logs gemma-embed ollama-init ml-api ml-worker` or
 `./infra/manage.sh status` (the ML API reports healthy only after model/schema load).
 
 Keycloak imports the development realm and four local accounts. Password for

@@ -57,7 +57,7 @@ const contexts=[];
 async function login(username){
   const context=await browser.newContext();contexts.push(context);
   const page=await context.newPage();
-  const account={page,token:null,profile:null};
+  const account={username,page,token:null,profile:null,signedInAt:Date.now()};
   page.on("request",request=>{if(request.url().endsWith("/api/me")) account.token=request.headers().authorization;});
   await page.goto(base,{timeout:30000});
   await page.locator("#username").fill(username);
@@ -68,10 +68,33 @@ async function login(username){
   account.profile=await api(account,"GET","/me");
   return account;
 }
+async function renewSession(account){
+  const renewed=await login(account.username);
+  if(renewed.profile.id!==account.profile.id)
+    throw new Error(`Demo identity changed while renewing ${account.username}`);
+  const previous=account.page.context();
+  account.page=renewed.page;
+  account.token=renewed.token;
+  account.signedInAt=renewed.signedInAt;
+  account.page.on("request",request=>{if(request.url().endsWith("/api/me")) account.token=request.headers().authorization;});
+  await previous.close();
+  console.log(`Renewed demo session: ${account.username}`);
+}
 async function api(account,method,route,data){
-  const response=await account.page.request.fetch(base+"/api"+route,{
-    method,headers:{Authorization:account.token},...(data===undefined?{}:{data}),timeout:20000,
+  // Long indexing runs outlast the UI inactivity timer. Use a fresh browser
+  // login, preserving the application's normal token and session limits.
+  if(account.profile && Date.now()-account.signedInAt>10*60*1000)
+    await renewSession(account);
+  const request=()=>account.page.request.fetch(base+"/api"+route,{
+    method,headers:{Authorization:account.token},...(data===undefined?{}:{data}),
+    timeout: route === "/search" ? 45000 : 20000,
   });
+  let response=await request();
+  if(response.status()===401 && account.profile){
+    await response.dispose();
+    await renewSession(account);
+    response=await request();
+  }
   if(!response.ok()) throw new Error(`API ${method} ${route} failed (${response.status()})`);
   return response.json();
 }
@@ -138,7 +161,7 @@ try{
       console.log(`${fixtureUser.username}: ${item.id}`);
     }
   }
-  const deadline=Date.now()+1800000;
+  const deadline=Date.now()+3600000;
   let pending=[...uploaded];
   while(pending.length){
     const remaining=[];

@@ -26,8 +26,7 @@ jobs:
       - name: Secret and known-exploited dependency gate
         run: ./infra/security-check.sh
       - name: Start CI smoke-test stack
-        # Hosted runners have no native Ollama GPU service. Real Gemma caption
-        # generation is exercised locally; CI covers its clients and job flow.
+        # Real Ollama inference is exercised locally; CI covers its clients and job flow.
         env:
           ML_EMBEDDING_MODEL: clip
           ML_CAPTION_ENABLED: "false"

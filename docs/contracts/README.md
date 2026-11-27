@@ -142,5 +142,5 @@ owner/researcher authorization as other metadata. Editable `description` remains
 user-supplied; generated text is not accepted from metadata-edit requests.
 Captions and vectors are committed with READY only by the current lease owner.
 The text embedding fingerprint includes generatedDescription, so a new caption
-invalidates any older cached metadata vector. Local generation requires Ollama
-and the configured Gemma 4 vision model; transient failures use upload retries.
+invalidates any older cached metadata vector. Local generation uses the
+configured Ollama vision model. Transient failures use upload retries.

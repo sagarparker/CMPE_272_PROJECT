@@ -94,18 +94,19 @@ migration is retained for Flyway checksum compatibility.
 
 ## Visual descriptions on upload
 
-New uploads in the integrated local stack are described once by native Ollama
-using `gemma4:e2b-it-q4_K_M`. Start Ollama and install the model before uploading:
+New uploads in the integrated local stack are described once by Ollama using
+`qwen3-vl:2b-instruct`. Docker Compose starts Ollama and installs the model in
+the persistent `ollama-models` volume:
 
 ```bash
-ollama pull gemma4:e2b-it-q4_K_M
 ./infra/manage.sh start
 ```
 
-The worker connects to `http://host.docker.internal:11434`; override
-`ML_CAPTION_URL` and `ML_CAPTION_MODEL` for a different local inference service.
-Set `ML_CAPTION_ENABLED=false` to disable caption generation. Native Ollama lets
-Apple Silicon use its GPU while the embedding service remains in Docker.
+The worker and search API connect to `http://ollama:11434` over the Compose
+network. Set `ML_CAPTION_MODEL` to select another vision model or
+`ML_CAPTION_URL` to use another Ollama endpoint. Set `ML_CAPTION_ENABLED=false`
+to disable caption generation. On Apple Silicon, Docker Desktop runs Ollama on
+the CPU. A host Ollama endpoint can use Metal.
 
 Generation occurs during asynchronous PROCESSING, with lease renewal. A temporary
 caption failure follows the upload job's existing retry policy. A successful
@@ -137,7 +138,7 @@ files are reported individually. Use `--asset-id UUID` to target one asset.
 ## Query-to-caption verification
 
 The integrated local API verifies text-search candidates against their generated
-visual descriptions using native Gemma 4. Candidates must first meet the 0.67
+visual descriptions using the configured Ollama model. Candidates must first meet the 0.67
 hybrid cutoff. Up to 20 candidates are checked in a bounded batch; missing visual
 evidence and unsupported subject/action/setting requirements are excluded. This
 checks saved caption evidence, not image pixels, and is not a perfect scene
@@ -145,11 +146,12 @@ verifier. Related-image results keep their visual-only ranking.
 
 Decisions are cached by exact query and full caption, so a changed caption is
 rechecked. A verifier timeout or malformed response returns search-unavailable;
-unchecked candidates are never substituted. Local verification has a 6-second
-timeout; the local backend allows 8 seconds for ML search. Cold model loading
+unchecked candidates are never substituted. The local Compose stack gives
+verification 30 seconds (`ML_VERIFICATION_TIMEOUT_SECONDS`) and the backend
+40 seconds for the full ML request (`ML_REQUEST_TIMEOUT`). Cold CPU model loading
 and uncached verification add latency. `ML_VERIFY_CAPTIONS=false` disables the
-additional check. Caption generation and verification share ML_CAPTION_URL and
-ML_CAPTION_MODEL. Normal image/text embedding weights remain 80/20.
+additional check. Caption generation and verification share `ML_CAPTION_URL` and
+`ML_CAPTION_MODEL`. Normal image/text embedding weights remain 80/20.
 
 
 Verification normalizes query casing and whitespace before decisions and cache
@@ -161,7 +163,7 @@ This guard can hide a truly colored subject if its caption omits that color.
 
 
 The GitHub Actions browser smoke test explicitly uses CLIP with captions and
-verification disabled because hosted runners do not provide the native Ollama
-service. Python/database tests cover caption jobs and scoped backfills with
+verification disabled to skip real Ollama inference on hosted runners.
+Python/database tests cover caption jobs and scoped backfills with
 controlled inference responses. The complete seed and actual local Gemma
 image/caption/text generation have been validated separately on Apple Silicon.

@@ -15,8 +15,9 @@ Start Docker Desktop, then run:
 ./infra/start.sh
 ```
 
-Open **http://localhost:8080**. First start downloads the pinned CLIP model.
-Watch `./infra/manage.sh logs ml-api ml-worker` until it loads.
+Open **http://localhost:8080**. First start downloads EmbeddingGemma 2 and the
+Ollama caption model into Docker volumes. Track model setup with
+`./infra/manage.sh logs gemma-embed ollama-init`.
 
 Local demo accounts: `admin`, `uploader`, `researcher`, `employee`; all use
 `local-demo-only`. These are public local fixtures. Only `admin` gets a role
@@ -52,6 +53,9 @@ Use the service names below with `./infra/manage.sh`.
 | `keycloak` | Local identity provider for sign-in and account provisioning | Default stack |
 | `azurite` | Azure Blob Storage emulator at `http://localhost:10000` | Default stack |
 | `blob-init` | Configures the Blob container and CORS before the backend starts | One-time startup job |
+| `gemma-embed` | EmbeddingGemma 2 text and image encoders | Default stack |
+| `ollama` | Vision captions and query-to-caption verification | Default stack |
+| `ollama-init` | Installs the configured Ollama model if it is missing | One-time startup job |
 | `ml-api` | FastAPI service for semantic search and model inference | Default stack |
 | `ml-worker` | Background worker that indexes uploaded images and videos | Default stack |
 | `prometheus` | Metrics and alert rules at `http://localhost:9090` | Default stack |

@@ -261,7 +261,11 @@ function Research() {
     if (suggestion) { data.set("query", suggestion); setQuery(suggestion); }
     const body = Object.fromEntries([...data].map(([key, value]) => [key, value || null]));
     try {
-      const response = await post("/search", { ...body, limit: 20 });
+      const response = await api("/search", {
+        method: "POST",
+        body: JSON.stringify({ ...body, limit: 20 }),
+        signal: AbortSignal.timeout(45000),
+      });
       if (id === request.current) { setResults(response.results); setResultLabel(body.query); }
     } catch (e) {
       if (id === request.current) setError(e.message);
