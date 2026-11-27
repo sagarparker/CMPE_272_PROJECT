@@ -106,7 +106,8 @@ def test_real_hdr_rotated_source_becomes_upright_sdr_h264(phone_video, tmp_path)
     assert video["r_frame_rate"] == "30/1"
     assert not [d for d in video.get("side_data_list", []) if d.get("rotation")]
     assert any(s["codec_type"] == "audio" for s in data["streams"])
-    assert [p.name for p in tmp_path.iterdir()] == sorted(["phone.mov", "check.mp4"])
+    # Directory listing order is filesystem-dependent; only the two expected files remain.
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["check.mp4", "phone.mov"]
 
 
 def test_playback_failure_keeps_search_vectors(tmp_path):
