@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MediaMesh — Azure deployment architecture</title>
+<style>
+  :root { --ink:#1d2430; --muted:#5b6678; --line:#c9d1dc; --azure:#0a66c2; --vm:#f3f6fa; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.45 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color:var(--ink); background:#fff; }
+  main { max-width:1640px; margin:0 auto; padding:24px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  h2 { font-size:17px; margin:28px 0 8px; border-bottom:1px solid var(--line); padding-bottom:4px; }
+  p.sub { color:var(--muted); margin:0 0 14px; }
+  svg { width:100%; height:auto; display:block; }
+  svg text { font-family:-apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill:var(--ink); }
+  .t { font-size:13px; font-weight:600; }
+  .s { font-size:11px; fill:#3b4556; }
+  .xs { font-size:10px; fill:#5b6678; }
+  .lbl { font-size:12px; font-weight:700; }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th, td { border:1px solid var(--line); padding:6px 8px; text-align:left; vertical-align:top; }
+  th { background:#f1f4f8; }
+  code { font-size:12px; background:#f1f4f8; padding:0 3px; border-radius:3px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  .card { border:1px solid var(--line); border-radius:8px; padding:10px 14px; }
+  .card h3 { margin:0 0 6px; font-size:14px; }
+  ol, ul { margin:4px 0; padding-left:20px; }
+  .num { display:inline-block; min-width:20px; height:20px; line-height:20px; border-radius:10px; background:#243b53; color:#fff; text-align:center; font-size:11px; font-weight:700; }
+</style>
+</head>
+<body>
+<main>
+<h1>MediaMesh — Azure deployment architecture</h1>
+<p class="sub">Production deployment from <code>compose.deploy.yaml</code> on one Azure VM, with private Azure Blob Storage.
+Site: <code>https://mediamesh-demo-bf5064f9.swedencentral.cloudapp.azure.com</code>. The numbered arrows are explained in the table below the diagram.</p>
+
+<svg viewBox="0 0 1600 1170" role="img" aria-label="MediaMesh Azure deployment diagram">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#243b53"/></marker>
+    <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0a66c2"/></marker>
+    <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7a8699"/></marker>
+  </defs>
+
+  <!-- ============ External actors ============ -->
+  <rect x="20" y="150" width="235" height="190" rx="10" fill="#fff8e6" stroke="#d9a400"/>
+  <text x="34" y="174" class="t">Web browser</text>
+  <text x="34" y="192" class="s">React single-page app (keycloak-js,</text>
+  <text x="34" y="206" class="s">OIDC authorization code + PKCE)</text>
+  <rect x="34" y="218" width="207" height="24" rx="5" fill="#fff" stroke="#e2c56b"/><text x="44" y="234" class="s">Admin · creates accounts, roles</text>
+  <rect x="34" y="248" width="207" height="24" rx="5" fill="#fff" stroke="#e2c56b"/><text x="44" y="264" class="s">Uploader · uploads own media</text>
+  <rect x="34" y="278" width="207" height="24" rx="5" fill="#fff" stroke="#e2c56b"/><text x="44" y="294" class="s">Researcher · search, preview, download</text>
+  <text x="34" y="324" class="xs">Sign-in: password + authenticator (TOTP)</text>
+
+  <rect x="20" y="430" width="235" height="96" rx="10" fill="#f4f4f4" stroke="#9aa5b5"/>
+  <text x="34" y="454" class="t">Let's Encrypt (ACME)</text>
+  <text x="34" y="472" class="s">Issues and renews the trusted</text>
+  <text x="34" y="486" class="s">TLS certificate for the hostname.</text>
+  <text x="34" y="504" class="xs">Contacted by Caddy automatically.</text>
+
+  <rect x="20" y="640" width="235" height="190" rx="10" fill="#eef7ee" stroke="#4f9a4f"/>
+  <text x="34" y="664" class="t">Operator laptop</text>
+  <text x="34" y="684" class="s">SSH key + pinned known_hosts</text>
+  <text x="34" y="702" class="s">• rsync reviewed source snapshot</text>
+  <text x="34" y="718" class="s">• compose.sh up -d --build</text>
+  <text x="34" y="734" class="s">• backup.sh, copy dumps off-host</text>
+  <text x="34" y="750" class="s">• add-provisioner.py (one-off)</text>
+  <text x="34" y="766" class="s">• ssh -L 9091 → Prometheus</text>
+  <text x="34" y="790" class="xs">No CI/CD, no container registry.</text>
+  <text x="34" y="806" class="xs">Images are built on the VM.</text>
+
+  <!-- ============ Azure ============ -->
+  <rect x="280" y="20" width="1300" height="1140" rx="14" fill="#f7fbff" stroke="#0a66c2" stroke-width="2"/>
+  <text x="298" y="44" class="lbl" fill="#0a66c2" style="fill:#0a66c2">Microsoft Azure · subscription bf5064f9… · resource group CMPE-272-Media-Mesh · region Sweden Central</text>
+
+  <!-- NSG / public IP band -->
+  <rect x="300" y="80" width="46" height="1060" rx="6" fill="#e3eefb" stroke="#7aa7dd"/>
+  <text transform="translate(328,1120) rotate(-90)" class="s">Public IP + DNS label (*.cloudapp.azure.com)  ·  Network security group: TCP 80/443 open to the internet, TCP 22 only from the owner's IP  ·  VNet / subnet / NIC</text>
+
+  <!-- VM -->
+  <rect x="360" y="80" width="870" height="1060" rx="12" fill="var(--vm)" stroke="#33475b" stroke-width="1.5"/>
+  <text x="376" y="102" class="lbl">VM vm-media-mesh-demo · Ubuntu 24.04.5 LTS x64 · Standard_B2as_v2 (2 vCPU / 8 GiB, no GPU) · 64 GiB SSD · managed identity</text>
+
+  <!-- Docker / compose -->
+  <rect x="380" y="118" width="830" height="728" rx="10" fill="#fff" stroke="#2b6cb0" stroke-dasharray="6 4"/>
+  <text x="394" y="138" class="t" style="fill:#2b6cb0">Docker Engine · Compose project "mediamesh-deploy" · bridge network mediamesh-deploy_default</text>
+  <text x="394" y="154" class="xs">All services: restart unless-stopped · json-file logs 10 MB × 3 · only edge (80/443) and Prometheus (127.0.0.1:9091) publish host ports</text>
+
+  <!-- edge -->
+  <rect x="400" y="250" width="165" height="140" rx="8" fill="#e8f1fb" stroke="#2b6cb0"/>
+  <text x="410" y="270" class="t">edge</text>
+  <text x="410" y="286" class="s">Caddy 2.11.9-alpine (digest)</text>
+  <text x="410" y="302" class="s">host :80, :443 → TLS</text>
+  <text x="410" y="318" class="s">HSTS + security headers</text>
+  <text x="410" y="334" class="s">/auth/realms/* → keycloak</text>
+  <text x="410" y="350" class="s">/auth/admin, /actuator → 404</text>
+  <text x="410" y="366" class="s">everything else → frontend</text>
+  <text x="410" y="382" class="xs">vol caddy-data, caddy-config</text>
+  <rect x="384" y="268" width="18" height="16" rx="3" fill="#2b6cb0"/><text x="386" y="280" class="xs" style="fill:#fff">443</text>
+  <rect x="384" y="290" width="18" height="16" rx="3" fill="#2b6cb0"/><text x="388" y="302" class="xs" style="fill:#fff">80</text>
+
+  <!-- frontend -->
+  <rect x="610" y="175" width="165" height="120" rx="8" fill="#e8f1fb" stroke="#2b6cb0"/>
+  <text x="620" y="195" class="t">frontend</text>
+  <text x="620" y="211" class="s">nginx 1.30.8-alpine (digest)</text>
+  <text x="620" y="227" class="s">serves Vite production build</text>
+  <text x="620" y="243" class="s">/api/*, /health → backend</text>
+  <text x="620" y="259" class="s">body limit 1 MB, JSON logs</text>
+  <text x="620" y="281" class="xs">build: node:24-alpine → nginx</text>
+
+  <!-- backend -->
+  <rect x="820" y="175" width="165" height="150" rx="8" fill="#e8f1fb" stroke="#2b6cb0"/>
+  <text x="830" y="195" class="t">backend</text>
+  <text x="830" y="211" class="s">Spring Boot 3.3 · Java 17 JRE</text>
+  <text x="830" y="227" class="s">:8080 API · :9091 metrics</text>
+  <text x="830" y="243" class="s">JWT check, RBAC, audit</text>
+  <text x="830" y="259" class="s">Flyway migrations</text>
+  <text x="830" y="275" class="s">breaker + bulkhead to ML</text>
+  <text x="830" y="291" class="s">signs Blob SAS (MI)</text>
+  <text x="830" y="315" class="xs">build: maven → temurin JRE, uid 10001</text>
+
+  <!-- ml-api -->
+  <rect x="1030" y="175" width="165" height="150" rx="8" fill="#e8f1fb" stroke="#2b6cb0"/>
+  <text x="1040" y="195" class="t">ml-api</text>
+  <text x="1040" y="211" class="s">FastAPI / uvicorn :8000</text>
+  <text x="1040" y="227" class="s">CLIP ViT-B/32 (CPU)</text>
+  <text x="1040" y="243" class="s">/internal/search</text>
+  <text x="1040" y="259" class="s">/internal/similar · /ready</text>
+  <text x="1040" y="275" class="s">text → vector → pgvector</text>
+  <text x="1040" y="299" class="xs">image mediamesh-ml:release</text>
+  <text x="1040" y="315" class="xs">vol model-cache</text>
+
+  <!-- keycloak -->
+  <rect x="610" y="380" width="165" height="150" rx="8" fill="#e8f1fb" stroke="#2b6cb0"/>
+  <text x="620" y="400" class="t">keycloak</text>
+  <text x="620" y="416" class="s">Keycloak 26.8.2 (digest)</text>
+  <text x="620" y="432" class="s">start --import-realm (prod)</text>
+  <text x="620" y="448" class="s">realm mediamesh, /auth</text>
+  <text x="620" y="464" class="s">mediamesh-web (PKCE)</text>
+  <text x="620" y="480" class="s">mediamesh-provisioner</text>
+  <text x="620" y="496" class="s">(manage-users only)</text>
+  <text x="620" y="520" class="xs">bind runtime/realm (ro)</text>
+
+  <!-- ml-worker -->
+  <rect x="1030" y="380" width="165" height="150" rx="8" fill="#e8f1fb" stroke="#2b6cb0"/>
+  <text x="1040" y="400" class="t">ml-worker</text>
+  <text x="1040" y="416" class="s">same image, worker command</text>
+  <text x="1040" y="432" class="s">claims jobs (SKIP LOCKED,</text>
+  <text x="1040" y="448" class="s">lease renewal)</text>
+  <text x="1040" y="464" class="s">images + ffmpeg video frames</text>
+  <text x="1040" y="480" class="s">→ CLIP embeddings</text>
+  <text x="1040" y="496" class="s">reads Blob via MI</text>
+  <text x="1040" y="520" class="xs">vol model-cache · 150 s drain</text>
+
+  <!-- prometheus -->
+  <rect x="400" y="600" width="165" height="120" rx="8" fill="#e8f1fb" stroke="#2b6cb0"/>
+  <text x="410" y="620" class="t">prometheus</text>
+  <text x="410" y="636" class="s">prom/prometheus v3.5.0</text>
+  <text x="410" y="652" class="s">127.0.0.1:9091 → 9090</text>
+  <text x="410" y="668" class="s">search SLO burn-rate rules</text>
+  <text x="410" y="684" class="s">35-day retention</text>
+  <text x="410" y="710" class="xs">vol prometheus-data · no receiver</text>
+
+  <!-- postgres -->
+  <rect x="660" y="600" width="490" height="120" rx="8" fill="#eaf6ef" stroke="#2f855a"/>
+  <text x="674" y="620" class="t">postgres · pgvector/pgvector:pg17-bookworm</text>
+  <text x="674" y="640" class="s">Database mediamesh: users, user_roles, audit_events, api_sessions, assets,</text>
+  <text x="674" y="656" class="s">indexing jobs, embeddings (pgvector)</text>
+  <text x="674" y="672" class="s">Database keycloak: identity data (users, TOTP credentials, sessions); created by init-db.sh</text>
+  <text x="674" y="696" class="xs">healthcheck pg_isready · vol postgres-data · no host port</text>
+
+  <!-- volumes -->
+  <text x="400" y="752" class="t">Named Docker volumes (on the VM disk)</text>
+  <g class="s">
+    <rect x="400" y="762" width="150" height="60" rx="6" fill="#fafafa" stroke="#9aa5b5"/><text x="410" y="784" class="s">caddy-data</text><text x="410" y="800" class="xs">TLS certificates</text>
+    <rect x="562" y="762" width="150" height="60" rx="6" fill="#fafafa" stroke="#9aa5b5"/><text x="572" y="784" class="s">caddy-config</text><text x="572" y="800" class="xs">Caddy state</text>
+    <rect x="724" y="762" width="150" height="60" rx="6" fill="#fafafa" stroke="#9aa5b5"/><text x="734" y="784" class="s">postgres-data</text><text x="734" y="800" class="xs">both databases</text>
+    <rect x="886" y="762" width="150" height="60" rx="6" fill="#fafafa" stroke="#9aa5b5"/><text x="896" y="784" class="s">model-cache</text><text x="896" y="800" class="xs">CLIP weights, shared</text>
+    <rect x="1048" y="762" width="147" height="60" rx="6" fill="#fafafa" stroke="#9aa5b5"/><text x="1058" y="784" class="s">prometheus-data</text><text x="1058" y="800" class="xs">metrics TSDB</text>
+  </g>
+
+  <!-- host filesystem -->
+  <rect x="380" y="862" width="830" height="140" rx="10" fill="#fff" stroke="#6b7a90"/>
+  <text x="394" y="884" class="t">Host directory /opt/mediamesh (release snapshot, not a Git checkout)</text>
+  <text x="394" y="904" class="s">• Source for backend/, frontend/, ml-service/ and compose.deploy.yaml; release-manifest.json records the SHA-256 of each file</text>
+  <text x="394" y="922" class="s">• infra/deploy/runtime/deploy.env (0600): database, Keycloak and provisioner secrets, bootstrap admin subject</text>
+  <text x="394" y="940" class="s">• infra/deploy/runtime/realm/ → keycloak import (read-only bind) · Caddyfile, prometheus/, init-db.sh → read-only binds</text>
+  <text x="394" y="958" class="s">• backups/ (root, 0700): pg_dump of mediamesh + keycloak written by backup.sh</text>
+  <text x="394" y="976" class="s">• Started with infra/deploy/compose.sh (docker compose --env-file runtime/deploy.env -f compose.deploy.yaml)</text>
+
+  <!-- startup order -->
+  <rect x="380" y="1016" width="420" height="110" rx="10" fill="#fff" stroke="#6b7a90"/>
+  <text x="394" y="1038" class="t">Startup order (depends_on)</text>
+  <text x="394" y="1058" class="s">postgres (healthy) → keycloak, backend</text>
+  <text x="394" y="1076" class="s">backend (healthy) → frontend, ml-api, ml-worker, prometheus</text>
+  <text x="394" y="1094" class="s">frontend + keycloak → edge</text>
+  <text x="394" y="1114" class="xs">ml-api /ready waits up to 120 s for the model to load</text>
+
+  <!-- IMDS -->
+  <rect x="820" y="1016" width="390" height="110" rx="10" fill="#fff4e5" stroke="#c77700"/>
+  <text x="834" y="1038" class="t">Azure Instance Metadata Service</text>
+  <text x="834" y="1056" class="s">169.254.169.254, reachable only from the VM</text>
+  <text x="834" y="1074" class="s">Gives backend, ml-api and ml-worker short-lived</text>
+  <text x="834" y="1090" class="s">Entra tokens for the VM's managed identity.</text>
+  <text x="834" y="1110" class="xs">No storage key or client secret is stored anywhere.</text>
+
+  <!-- ============ Azure PaaS on the right ============ -->
+  <rect x="1250" y="90" width="315" height="330" rx="10" fill="#fff" stroke="#0a66c2" stroke-width="1.5"/>
+  <text x="1264" y="112" class="t">Storage account mm272bf5064f9demo</text>
+  <text x="1264" y="130" class="s">StorageV2 · Standard LRS · same region</text>
+  <text x="1264" y="146" class="s">HTTPS only, TLS 1.2+</text>
+  <text x="1264" y="162" class="s">Shared-key access off</text>
+  <text x="1264" y="178" class="s">Anonymous blob access off</text>
+  <rect x="1264" y="192" width="287" height="100" rx="8" fill="#eef5fd" stroke="#7aa7dd"/>
+  <text x="1276" y="212" class="t">Container "mediamesh" (private)</text>
+  <text x="1276" y="230" class="s">blobs assets/&lt;asset-id&gt; (photos, videos)</text>
+  <text x="1276" y="248" class="s">48 images + 2 videos (demo library)</text>
+  <text x="1276" y="266" class="s">create-only upload SAS, 15 min</text>
+  <text x="1276" y="282" class="s">read SAS, 60 s, HTTPS only</text>
+  <text x="1264" y="314" class="s">CORS: exactly the site origin;</text>
+  <text x="1264" y="330" class="s">GET, HEAD, PUT, OPTIONS</text>
+  <text x="1264" y="350" class="s">Blob versioning + 7-day soft delete</text>
+  <text x="1264" y="376" class="xs">The public Blob endpoint stays reachable so</text>
+  <text x="1264" y="390" class="xs">browsers can use their SAS URLs.</text>
+
+  <rect x="1250" y="450" width="315" height="190" rx="10" fill="#fff" stroke="#0a66c2" stroke-width="1.5"/>
+  <text x="1264" y="472" class="t">Microsoft Entra ID + Azure RBAC</text>
+  <text x="1264" y="492" class="s">VM system-assigned managed identity</text>
+  <text x="1264" y="508" class="s">(principal f160d9c0…)</text>
+  <text x="1264" y="532" class="s">• Storage Blob Data Contributor</text>
+  <text x="1276" y="548" class="xs">scope: container mediamesh</text>
+  <text x="1264" y="568" class="s">• Storage Blob Delegator</text>
+  <text x="1276" y="584" class="xs">scope: storage account (user-delegation SAS)</text>
+  <text x="1264" y="612" class="xs">Not used for staff sign-in. Staff sign in with Keycloak.</text>
+
+  <rect x="1250" y="670" width="315" height="120" rx="10" fill="#fff" stroke="#9aa5b5"/>
+  <text x="1264" y="692" class="t">Cost controls</text>
+  <text x="1264" y="712" class="s">Budget alerts (they don't stop spending)</text>
+  <text x="1264" y="728" class="s">VM auto-shutdown; deallocate when idle</text>
+  <text x="1264" y="744" class="s">Disk and storage still bill while stopped</text>
+
+  <rect x="1250" y="820" width="315" height="130" rx="10" fill="#fff" stroke="#9aa5b5" stroke-dasharray="4 3"/>
+  <text x="1264" y="842" class="t">Not in this deployment</text>
+  <text x="1264" y="862" class="s">AKS, managed PostgreSQL, GPU,</text>
+  <text x="1264" y="878" class="s">load balancer, container registry,</text>
+  <text x="1264" y="894" class="s">external identity provider, alert receiver</text>
+  <text x="1264" y="918" class="xs">One VM = one failure domain;</text>
+  <text x="1264" y="932" class="xs">not highly available.</text>
+
+  <!-- ============ Arrows ============ -->
+  <g fill="none" stroke="#243b53" stroke-width="1.8">
+    <!-- 1 browser -> edge -->
+    <path d="M255,276 C320,276 330,278 382,278" marker-end="url(#a)"/>
+    <!-- 2 edge -> keycloak -->
+    <path d="M565,350 C590,350 585,440 608,440" marker-end="url(#a)"/>
+    <!-- 3 edge -> frontend -->
+    <path d="M565,272 C590,272 585,235 608,235" marker-end="url(#a)"/>
+    <!-- 4 frontend -> backend -->
+    <path d="M775,235 L818,235" marker-end="url(#a)"/>
+    <!-- 5 backend -> keycloak -->
+    <path d="M850,325 C850,410 810,440 777,450" marker-end="url(#a)"/>
+    <!-- 6 backend -> ml-api -->
+    <path d="M985,250 L1028,250" marker-end="url(#a)"/>
+    <!-- 7 backend -> postgres -->
+    <path d="M930,325 L930,598" marker-end="url(#a)"/>
+    <!-- 8 ml-api -> postgres via gap -->
+    <path d="M1040,325 C1040,345 1007,345 1007,370 L1007,598" marker-end="url(#a)"/>
+    <!-- 9 ml-worker -> postgres -->
+    <path d="M1110,530 L1110,598" marker-end="url(#a)"/>
+    <!-- 10 keycloak -> postgres -->
+    <path d="M692,530 L692,598" marker-end="url(#a)"/>
+    <!-- 11 prometheus -> backend -->
+    <path d="M565,620 L578,620 L578,345 L880,345 L880,327" marker-end="url(#a)" stroke="#7a8699" stroke-dasharray="5 4"/>
+    <!-- 16 edge <-> LE -->
+    <path d="M400,372 C330,372 320,478 257,478" marker-end="url(#a)" marker-start="url(#a)" stroke="#7a8699" stroke-dasharray="5 4"/>
+  </g>
+  <g fill="none" stroke="#0a66c2" stroke-width="1.8">
+    <!-- 12 worker -> blob -->
+    <path d="M1195,455 C1225,455 1225,400 1248,400" marker-end="url(#ab)"/>
+    <!-- 13 backend -> blob (delegation key) -->
+    <path d="M940,175 L940,163 L1222,163 C1236,163 1236,150 1248,150" marker-end="url(#ab)"/>
+    <!-- 14 browser -> blob direct -->
+    <path d="M137,150 L137,62 L1440,62 L1440,88" marker-end="url(#ab)"/>
+    <!-- 15 IMDS -> Entra -->
+    <path d="M1210,1070 L1240,1070 L1240,545 L1248,545" marker-end="url(#ab)" stroke-dasharray="6 4"/>
+  </g>
+  <g fill="none" stroke="#4f9a4f" stroke-width="1.8">
+    <!-- 17 operator -> VM ssh -->
+    <path d="M255,760 C320,760 330,930 378,930" marker-end="url(#a)"/>
+    <!-- 18 tunnel -> prometheus -->
+    <path d="M255,700 C320,700 340,660 398,660" marker-end="url(#a)" stroke-dasharray="5 4"/>
+  </g>
+
+  <!-- numbered badges -->
+  <g font-size="11" font-weight="700">
+    <g><circle cx="270" cy="276" r="10" fill="#243b53"/><text x="266" y="280" style="fill:#fff">1</text></g>
+    <g><circle cx="595" cy="420" r="10" fill="#243b53"/><text x="591" y="424" style="fill:#fff">2</text></g>
+    <g><circle cx="587" cy="252" r="10" fill="#243b53"/><text x="583" y="256" style="fill:#fff">3</text></g>
+    <g><circle cx="797" cy="235" r="10" fill="#243b53"/><text x="793" y="239" style="fill:#fff">4</text></g>
+    <g><circle cx="830" cy="405" r="10" fill="#243b53"/><text x="826" y="409" style="fill:#fff">5</text></g>
+    <g><circle cx="1007" cy="250" r="10" fill="#243b53"/><text x="1003" y="254" style="fill:#fff">6</text></g>
+    <g><circle cx="930" cy="470" r="10" fill="#243b53"/><text x="926" y="474" style="fill:#fff">7</text></g>
+    <g><circle cx="1007" cy="470" r="10" fill="#243b53"/><text x="1003" y="474" style="fill:#fff">8</text></g>
+    <g><circle cx="1110" cy="564" r="10" fill="#243b53"/><text x="1106" y="568" style="fill:#fff">9</text></g>
+    <g><circle cx="692" cy="564" r="10" fill="#243b53"/><text x="684" y="568" style="fill:#fff">10</text></g>
+    <g><circle cx="578" cy="560" r="10" fill="#7a8699"/><text x="571" y="564" style="fill:#fff">11</text></g>
+    <g><circle cx="1222" cy="428" r="10" fill="#0a66c2"/><text x="1215" y="432" style="fill:#fff">12</text></g>
+    <g><circle cx="1100" cy="163" r="10" fill="#0a66c2"/><text x="1093" y="167" style="fill:#fff">13</text></g>
+    <g><circle cx="800" cy="62" r="10" fill="#0a66c2"/><text x="793" y="66" style="fill:#fff">14</text></g>
+    <g><circle cx="1240" cy="860" r="10" fill="#0a66c2"/><text x="1233" y="864" style="fill:#fff">15</text></g>
+    <g><circle cx="364" cy="383" r="10" fill="#7a8699"/><text x="357" y="387" style="fill:#fff">16</text></g>
+    <g><circle cx="358" cy="919" r="10" fill="#4f9a4f"/><text x="351" y="923" style="fill:#fff">17</text></g>
+    <g><circle cx="367" cy="664" r="10" fill="#4f9a4f"/><text x="360" y="668" style="fill:#fff">18</text></g>
+  </g>
+  <text x="820" y="56" class="xs">direct browser ↔ Blob transfer with SAS (bytes never pass through the VM)</text>
+</svg>
+
+<h2>Numbered connections</h2>
+<table>
+  <tr><th>#</th><th>From → to</th><th>Protocol / path</th><th>Purpose</th></tr>
+  <tr><td><span class="num">1</span></td><td>Browser → edge</td><td>HTTPS 443 (port 80 redirects and serves ACME)</td><td>The only public entry point for the app and sign-in pages.</td></tr>
+  <tr><td><span class="num">2</span></td><td>edge → keycloak</td><td>HTTP keycloak:8080, <code>/auth/realms/*</code>, <code>/auth/resources/*</code></td><td>OIDC login, password change and TOTP enrollment. Other <code>/auth</code> paths, including the admin console, return 404.</td></tr>
+  <tr><td><span class="num">3</span></td><td>edge → frontend</td><td>HTTP frontend:80</td><td>All other paths: the single-page app and <code>/api</code>.</td></tr>
+  <tr><td><span class="num">4</span></td><td>frontend → backend</td><td>HTTP backend:8080, <code>/api/*</code>, <code>/health</code></td><td>nginx proxies API calls and adds an <code>X-Request-ID</code> header.</td></tr>
+  <tr><td><span class="num">5</span></td><td>backend → keycloak</td><td>HTTP keycloak:8080 (internal)</td><td>Fetches JWKS keys to verify tokens. Uses the <code>mediamesh-provisioner</code> client (client credentials, manage-users only) to create accounts.</td></tr>
+  <tr><td><span class="num">6</span></td><td>backend → ml-api</td><td>HTTP ml-api:8000, <code>/internal/search</code>, <code>/internal/similar</code></td><td>Semantic search. 1.5 s timeout, circuit breaker, bulkhead of 5 concurrent calls.</td></tr>
+  <tr><td><span class="num">7</span></td><td>backend → postgres</td><td>JDBC postgres:5432, database mediamesh</td><td>Catalog, users, roles, sessions, audit and jobs. Flyway applies migrations at startup.</td></tr>
+  <tr><td><span class="num">8</span></td><td>ml-api → postgres</td><td>PostgreSQL protocol, database mediamesh</td><td>pgvector similarity ranking over the stored embeddings.</td></tr>
+  <tr><td><span class="num">9</span></td><td>ml-worker → postgres</td><td>PostgreSQL protocol, database mediamesh</td><td>Claims indexing jobs (<code>FOR UPDATE SKIP LOCKED</code> with a lease), writes embeddings, marks assets READY or FAILED.</td></tr>
+  <tr><td><span class="num">10</span></td><td>keycloak → postgres</td><td>JDBC postgres:5432, database keycloak</td><td>Identity storage: users, password and TOTP credentials, sessions.</td></tr>
+  <tr><td><span class="num">11</span></td><td>prometheus → backend</td><td>HTTP backend:9091 <code>/actuator/prometheus</code>, every 15 s</td><td>Search SLIs, latency and error-budget burn-rate rules.</td></tr>
+  <tr><td><span class="num">12</span></td><td>ml-worker → Blob</td><td>HTTPS, Azure SDK with a managed-identity token</td><td>Downloads uploaded media for decoding and embedding.</td></tr>
+  <tr><td><span class="num">13</span></td><td>backend → Blob</td><td>HTTPS, managed-identity token</td><td>Gets a user-delegation key (cached briefly) and signs SAS URLs. Verifies uploaded object size and type.</td></tr>
+  <tr><td><span class="num">14</span></td><td>Browser → Blob</td><td>HTTPS with SAS, CORS limited to the site origin</td><td>Upload: create-only PUT (BlockBlob, <code>If-None-Match: *</code>), 15 min. Preview/download: read-only GET, 60 s.</td></tr>
+  <tr><td><span class="num">15</span></td><td>IMDS → Entra ID</td><td>Azure platform</td><td>Issues tokens for the VM identity. RBAC limits them to the two storage roles.</td></tr>
+  <tr><td><span class="num">16</span></td><td>edge ↔ Let's Encrypt</td><td>ACME over 80/443</td><td>Automatic certificate issuance and renewal.</td></tr>
+  <tr><td><span class="num">17</span></td><td>Operator → VM</td><td>SSH 22 (owner IP only, pinned host key)</td><td>Copies the release, runs compose, backups and one-off scripts.</td></tr>
+  <tr><td><span class="num">18</span></td><td>Operator → prometheus</td><td>SSH tunnel <code>-L 9091:127.0.0.1:9091</code></td><td>Views metrics without exposing Prometheus publicly.</td></tr>
+</table>
+
+<h2>Containers on the VM</h2>
+<table>
+  <tr><th>Service</th><th>Image / how it is built</th><th>Ports</th><th>Storage</th><th>Role</th></tr>
+  <tr><td>edge</td><td><code>caddy:2.11.9-alpine</code>, pinned by digest</td><td>host 80, 443</td><td>caddy-data, caddy-config; Caddyfile (ro)</td><td>TLS termination, security headers, path allow-list, reverse proxy.</td></tr>
+  <tr><td>frontend</td><td>Built on the VM: <code>node:24-alpine</code> runs <code>npm ci</code> + <code>vite build</code>, then <code>nginx:1.30.8-alpine</code> (digest) serves <code>dist/</code></td><td>80 (internal)</td><td>none</td><td>Serves the static app; proxies <code>/api</code> and <code>/health</code>.</td></tr>
+  <tr><td>backend</td><td>Built on the VM: <code>maven:3.9-eclipse-temurin-17</code> packages the jar, then <code>eclipse-temurin:17-jre</code> runs it as uid 10001</td><td>8080 API, 9091 metrics (internal)</td><td>none (stateless)</td><td>REST API, JWT validation, RBAC, audit, SAS signing, account creation, ML resilience.</td></tr>
+  <tr><td>keycloak</td><td><code>quay.io/keycloak/keycloak:26.8.2</code>, pinned by digest, <code>start --import-realm</code></td><td>8080 (internal)</td><td>keycloak database in postgres; realm import (ro)</td><td>Single sign-on: OIDC, password policy, TOTP, brute-force protection.</td></tr>
+  <tr><td>postgres</td><td><code>pgvector/pgvector:pg17-bookworm</code> (tag)</td><td>5432 (internal)</td><td>postgres-data</td><td>Two databases: mediamesh (app + vectors) and keycloak.</td></tr>
+  <tr><td>ml-api</td><td>Built on the VM from <code>ml-service</code>, target <code>runtime</code> (uv Python 3.11 slim, non-root <code>app</code> user); tagged <code>mediamesh-ml:release</code></td><td>8000 (internal)</td><td>model-cache</td><td>CLIP text embedding + pgvector search; readiness at <code>/ready</code>.</td></tr>
+  <tr><td>ml-worker</td><td>Same image as ml-api, command <code>python -m mediamesh_ml.worker</code></td><td>none</td><td>model-cache</td><td>Background indexing: decode images, sample video frames with ffmpeg, embed, store vectors.</td></tr>
+  <tr><td>prometheus</td><td><code>prom/prometheus:v3.5.0</code> (tag)</td><td>127.0.0.1:9091 → 9090</td><td>prometheus-data; config (ro)</td><td>Metrics, SLO recording and alert rules (no notification receiver).</td></tr>
+</table>
+
+<h2>Request flows</h2>
+<div class="grid">
+  <div class="card"><h3>Sign-in</h3><ol>
+    <li>The browser is redirected to Keycloak (1 → 2): authorization code + PKCE.</li>
+    <li>The user enters a password and authenticator code. On first sign-in, Keycloak forces a password change and TOTP enrollment.</li>
+    <li>The app calls <code>/api/me</code> (1 → 3 → 4). The backend checks signature (JWKS, 5), issuer, audience <code>mediamesh-api</code> and expiry.</li>
+    <li>The backend maps (issuer, subject) to a user and loads roles from postgres (7). API sessions expire after 30 min idle or 8 h total.</li>
+  </ol></div>
+  <div class="card"><h3>Admin creates an account</h3><ol>
+    <li>The admin submits the form, which calls <code>POST /api/admin/users</code> (1 → 3 → 4).</li>
+    <li>The backend checks ADMIN. Only the primary admin may create ADMIN accounts.</li>
+    <li>The backend gets a provisioner token and creates the Keycloak user with a temporary password and the required actions UPDATE_PASSWORD + CONFIGURE_TOTP (5).</li>
+    <li>The user, role and audit event are saved in postgres (7). The temporary password is returned once.</li>
+  </ol></div>
+  <div class="card"><h3>Upload and indexing</h3><ol>
+    <li>The uploader calls <code>POST /api/assets/initiate</code>. The backend creates the asset (UPLOADING) and a 15-min create-only SAS (7, 13).</li>
+    <li>The browser PUTs the file straight to Blob Storage (14).</li>
+    <li><code>/complete</code>: the backend verifies the stored object, creates a job and sets PROCESSING (13, 7).</li>
+    <li>ml-worker claims the job (9), downloads the file via managed identity (12), embeds it with CLIP, writes vectors and sets READY.</li>
+  </ol></div>
+  <div class="card"><h3>Search, preview and download</h3><ol>
+    <li>The researcher calls <code>POST /api/search</code>. The backend checks RESEARCHER and finds the eligible READY assets (7).</li>
+    <li>The backend calls ml-api (6), which embeds the query text and ranks it with pgvector (8). Prometheus records the result (11).</li>
+    <li>For preview or download, <code>/access-url</code> returns a 60-second read SAS (13). The browser fetches the file directly from Blob Storage (14).</li>
+  </ol></div>
+</div>
+
+<h2>Security boundaries</h2>
+<ul>
+  <li>Only ports 80 and 443 are public. SSH is limited to the owner's IP. Postgres, Keycloak, the backend, the ML services and Prometheus have no public ports.</li>
+  <li>Caddy forwards only the sign-in paths to Keycloak. The Keycloak admin console, <code>/actuator</code> and <code>/metrics</code> return 404 publicly.</li>
+  <li>No storage keys exist. Blob access uses the VM managed identity, and browsers get short-lived, narrowly scoped SAS URLs.</li>
+  <li>Secrets live only in <code>runtime/deploy.env</code> (0600) on the VM and in the operator's private copy. The provisioner service account can only manage users.</li>
+  <li>Caddy, Keycloak and nginx images are pinned by digest. Postgres and Prometheus are pinned by tag only.</li>
+</ul>
+
+<h2>Release and operations</h2>
+<ul>
+  <li><b>Release:</b> the operator copies a reviewed source snapshot to <code>/opt/mediamesh</code> over SSH. <code>release-manifest.json</code> records file hashes. Images are built on the VM with <code>compose.sh up -d --build</code>. There is no registry or automatic CD.</li>
+  <li><b>Backups:</b> <code>backup.sh</code> writes pg_dumps of both databases to <code>/opt/mediamesh/backups/</code>. Copy them off-host. Blob versioning and soft delete protect the media files separately.</li>
+  <li><b>Monitoring:</b> Prometheus is reached through an SSH tunnel. Alerts evaluate but notify no one, because no receiver is configured.</li>
+  <li><b>Availability:</b> one VM is one failure domain. A reboot or outage stops every service until Docker restarts them.</li>
+</ul>
+</main>
+</body>
+</html>

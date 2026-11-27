@@ -43,7 +43,7 @@ The ML service runs independently from the Spring Boot backend and exposes inter
 
 | Component | Responsibility |
 |---|---|
-| Python Flask API | Internal semantic search and similarity endpoints |
+| Python FastAPI API | Internal semantic search and similarity endpoints, with Pydantic validation and Uvicorn serving |
 | CLIP Model | Generate compatible text and image embeddings |
 | PostgreSQL + pgvector | Persist and search media embeddings |
 | FFmpeg | Extract representative frames from videos |

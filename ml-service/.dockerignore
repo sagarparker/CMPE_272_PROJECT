@@ -1,0 +1,13 @@
+*
+!pyproject.toml
+!uv.lock
+!src/
+!src/**
+!tests/
+!tests/**
+!evaluation/
+!evaluation/**
+!dev/
+!dev/**
+!dev-ui/
+!dev-ui/**

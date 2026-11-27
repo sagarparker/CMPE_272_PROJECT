@@ -1,0 +1,250 @@
+{
+  "model_version": "sentence-transformers/clip-ViT-B-32@327ab6726d33c0e22f920c83f2ff9e4bd38ca37f:rgb-l2-v1",
+  "dimensions": 512,
+  "device": "cpu",
+  "sample_count": 25,
+  "k": 5,
+  "model_load_seconds": 5.9679327119999925,
+  "image_encoding_seconds": 0.9349296249999952,
+  "peak_process_rss_mib": 1037.2734375,
+  "hit_rate_at_k": 1.0,
+  "mean_recall_at_k": 0.9428571428571428,
+  "queries": [
+    {
+      "query": "elephants standing or bathing in water",
+      "relevant_ids": [
+        "elephant-01",
+        "elephant-02",
+        "elephant-03",
+        "elephant-04",
+        "elephant-05"
+      ],
+      "matches": [
+        {
+          "id": "elephant-02",
+          "score": 0.32659076938108755
+        },
+        {
+          "id": "elephant-03",
+          "score": 0.3248951078346025
+        },
+        {
+          "id": "elephant-05",
+          "score": 0.3245505194558872
+        },
+        {
+          "id": "elephant-01",
+          "score": 0.29581800275049286
+        },
+        {
+          "id": "elephant-04",
+          "score": 0.2712918024960862
+        }
+      ],
+      "hit_at_k": true,
+      "recall_at_k": 1.0,
+      "seconds": 0.06572320899999795
+    },
+    {
+      "query": "lions resting in grass",
+      "relevant_ids": [
+        "lion-01",
+        "lion-02",
+        "lion-03",
+        "lion-04",
+        "lion-05"
+      ],
+      "matches": [
+        {
+          "id": "lion-04",
+          "score": 0.3176570749579376
+        },
+        {
+          "id": "lion-03",
+          "score": 0.31705885206267126
+        },
+        {
+          "id": "lion-01",
+          "score": 0.30355576757585584
+        },
+        {
+          "id": "lion-05",
+          "score": 0.2970263750492443
+        },
+        {
+          "id": "lion-02",
+          "score": 0.29268895401543904
+        }
+      ],
+      "hit_at_k": true,
+      "recall_at_k": 1.0,
+      "seconds": 0.04459295799995289
+    },
+    {
+      "query": "zebras standing or grazing in grass",
+      "relevant_ids": [
+        "zebra-01",
+        "zebra-02",
+        "zebra-03",
+        "zebra-04",
+        "zebra-05"
+      ],
+      "matches": [
+        {
+          "id": "zebra-03",
+          "score": 0.31023451293033816
+        },
+        {
+          "id": "zebra-02",
+          "score": 0.3034326754213618
+        },
+        {
+          "id": "zebra-05",
+          "score": 0.3005513637995385
+        },
+        {
+          "id": "zebra-01",
+          "score": 0.29288440643223473
+        },
+        {
+          "id": "giraffe-01",
+          "score": 0.28464351401691834
+        }
+      ],
+      "hit_at_k": true,
+      "recall_at_k": 0.8,
+      "seconds": 0.02596083399998861
+    },
+    {
+      "query": "giraffes near trees",
+      "relevant_ids": [
+        "giraffe-01",
+        "giraffe-02",
+        "giraffe-03",
+        "giraffe-04",
+        "giraffe-05"
+      ],
+      "matches": [
+        {
+          "id": "giraffe-02",
+          "score": 0.3154799550728821
+        },
+        {
+          "id": "giraffe-01",
+          "score": 0.3142939063845801
+        },
+        {
+          "id": "zebra-04",
+          "score": 0.3089871804972486
+        },
+        {
+          "id": "giraffe-04",
+          "score": 0.29875366259967695
+        },
+        {
+          "id": "giraffe-03",
+          "score": 0.2979324817206678
+        }
+      ],
+      "hit_at_k": true,
+      "recall_at_k": 0.8,
+      "seconds": 0.015958333000071434
+    },
+    {
+      "query": "birds flying over water",
+      "relevant_ids": [
+        "bird-01",
+        "bird-02",
+        "bird-03",
+        "bird-04"
+      ],
+      "matches": [
+        {
+          "id": "bird-04",
+          "score": 0.27930241793168387
+        },
+        {
+          "id": "bird-03",
+          "score": 0.2792248673999935
+        },
+        {
+          "id": "bird-01",
+          "score": 0.27831536775049204
+        },
+        {
+          "id": "bird-05",
+          "score": 0.2480131125757569
+        },
+        {
+          "id": "bird-02",
+          "score": 0.24431605160767403
+        }
+      ],
+      "hit_at_k": true,
+      "recall_at_k": 1.0,
+      "seconds": 0.015609874999995554
+    },
+    {
+      "query": "a giraffe silhouette at sunset",
+      "relevant_ids": [
+        "giraffe-03"
+      ],
+      "matches": [
+        {
+          "id": "giraffe-03",
+          "score": 0.36601310721214464
+        },
+        {
+          "id": "giraffe-05",
+          "score": 0.27283222962864306
+        },
+        {
+          "id": "giraffe-02",
+          "score": 0.25982535751276614
+        },
+        {
+          "id": "zebra-04",
+          "score": 0.25947993929422725
+        },
+        {
+          "id": "giraffe-04",
+          "score": 0.2527753233989434
+        }
+      ],
+      "hit_at_k": true,
+      "recall_at_k": 1.0,
+      "seconds": 0.015517791000092984
+    },
+    {
+      "query": "a reflection of a flying bird in water",
+      "relevant_ids": [
+        "bird-05"
+      ],
+      "matches": [
+        {
+          "id": "bird-01",
+          "score": 0.31923627645545627
+        },
+        {
+          "id": "bird-05",
+          "score": 0.268485516748627
+        },
+        {
+          "id": "bird-02",
+          "score": 0.26237322335964
+        },
+        {
+          "id": "bird-04",
+          "score": 0.2572256213392535
+        },
+        {
+          "id": "bird-03",
+          "score": 0.25132419751784185
+        }
+      ],
+      "hit_at_k": true,
+      "recall_at_k": 1.0,
+      "seconds": 0.018908915999986675
+    }
+  ]
+}

@@ -1,0 +1,144 @@
+name: mediamesh-ml
+
+x-app-environment: &app-environment
+  ML_DATABASE_URL: ${ML_DATABASE_URL:-postgresql://mediamesh:local-development-only@postgres:5432/mediamesh}
+  ML_MEDIA_ROOT: /data/media
+  ML_MODEL_CACHE: /data/models
+  HF_HOME: /data/models
+  ML_DEVICE: ${ML_DEVICE:-cpu}
+  ML_LOG_LEVEL: ${ML_LOG_LEVEL:-INFO}
+  ML_DB_CONNECT_TIMEOUT_SECONDS: ${ML_DB_CONNECT_TIMEOUT_SECONDS:-5}
+  ML_DB_STATEMENT_TIMEOUT_MS: ${ML_DB_STATEMENT_TIMEOUT_MS:-15000}
+  ML_MODEL_NAME: ${ML_MODEL_NAME:-sentence-transformers/clip-ViT-B-32}
+  ML_MODEL_REVISION: ${ML_MODEL_REVISION:-327ab6726d33c0e22f920c83f2ff9e4bd38ca37f}
+  ML_EMBEDDING_DIMENSIONS: 512
+  ML_EMBEDDING_BATCH_SIZE: ${ML_EMBEDDING_BATCH_SIZE:-8}
+  ML_MODEL_OFFLINE: ${ML_MODEL_OFFLINE:-false}
+  ML_WORKER_POLL_SECONDS: ${ML_WORKER_POLL_SECONDS:-2}
+  ML_JOB_LEASE_SECONDS: ${ML_JOB_LEASE_SECONDS:-60}
+  ML_JOB_RETRY_BASE_SECONDS: ${ML_JOB_RETRY_BASE_SECONDS:-2}
+  ML_JOB_RETRY_MAX_SECONDS: ${ML_JOB_RETRY_MAX_SECONDS:-60}
+  ML_JOB_MAX_ATTEMPTS: ${ML_JOB_MAX_ATTEMPTS:-3}
+  ML_MEDIA_MAX_BYTES: ${ML_MEDIA_MAX_BYTES:-100000000}
+  ML_VIDEO_MAX_DURATION_SECONDS: ${ML_VIDEO_MAX_DURATION_SECONDS:-180}
+  ML_VIDEO_MAX_PIXELS: ${ML_VIDEO_MAX_PIXELS:-8294400}
+  ML_VIDEO_TEMP_ROOT: /tmp
+  ML_VIDEO_MAX_FRAMES: ${ML_VIDEO_MAX_FRAMES:-8}
+  ML_VIDEO_TIMEOUT_SECONDS: ${ML_VIDEO_TIMEOUT_SECONDS:-120}
+
+x-runtime: &runtime
+  image: mediamesh-ml:local
+  build:
+    context: .
+    target: runtime
+    additional_contexts:
+      migrations: ../backend/src/main/resources/db/migration
+  init: true
+  environment: *app-environment
+  volumes:
+    - model-cache:/data/models
+    - ./data/media:/data/media:ro
+  networks: [ml]
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17-bookworm@sha256:b513c48566e4777cd3370451400000c78eda6a08131d68f4c31d4a76f27bd8fd
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mediamesh}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-development-only}
+      POSTGRES_DB: ${POSTGRES_DB:-mediamesh}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks: [ml]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  postgres-test:
+    image: pgvector/pgvector:pg17-bookworm@sha256:b513c48566e4777cd3370451400000c78eda6a08131d68f4c31d4a76f27bd8fd
+    profiles: [test]
+    environment:
+      POSTGRES_USER: mediamesh
+      POSTGRES_PASSWORD: local-test-only
+      POSTGRES_DB: mediamesh_test
+    tmpfs:
+      - /var/lib/postgresql/data
+    networks: [ml]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U mediamesh -d mediamesh_test']
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  ml-api:
+    <<: *runtime
+    ports:
+      - "127.0.0.1:${ML_API_PORT:-8001}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # Enable after explicit local job-fixture initialization.
+  ml-worker:
+    <<: *runtime
+    profiles: [worker]
+    command: [python, -m, mediamesh_ml.worker]
+    stop_grace_period: 150s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ml-dev-ui:
+    image: mediamesh-ml-tools:local
+    profiles: [ui]
+    init: true
+    environment:
+      <<: *app-environment
+      ML_DEV_API_URL: http://ml-api:8000
+    command: [uvicorn, "mediamesh_ml.dev_ui:create_app", --factory, --host, "0.0.0.0", --port, "8080"]
+    ports:
+      - "127.0.0.1:${ML_DEV_UI_PORT:-8002}:8080"
+    volumes:
+      - ./data/media:/data/media:rw
+    networks: [ml]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ml-api:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+
+  ml-tools:
+    image: mediamesh-ml-tools:local
+    build:
+      context: .
+      target: tools
+      additional_contexts:
+        migrations: ../backend/src/main/resources/db/migration
+    profiles: [tools]
+    init: true
+    environment: *app-environment
+    volumes:
+      - model-cache:/data/models
+      - ./data/media:/data/media:rw
+    networks: [ml]
+
+networks:
+  ml:
+
+volumes:
+  model-cache:
+  postgres-data:

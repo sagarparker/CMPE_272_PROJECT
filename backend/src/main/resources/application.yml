@@ -1,0 +1,58 @@
+spring:
+  main:
+    banner-mode: "off"
+  application:
+    name: mediamesh
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/mediamesh}
+    username: ${DATABASE_USERNAME:mediamesh}
+    password: ${DATABASE_PASSWORD:}
+    hikari:
+      connection-timeout: 2000
+      data-source-properties:
+        connectTimeout: 5
+        socketTimeout: 15
+        options: -c statement_timeout=15000 -c lock_timeout=5000
+
+mediamesh:
+  storage:
+    max-upload-bytes: ${STORAGE_MAX_UPLOAD_BYTES:100000000}
+  security:
+    issuer: ${OIDC_ISSUER:http://localhost:8081/realms/mediamesh}
+    jwk-set-uri: ${OIDC_JWKS:http://localhost:8081/realms/mediamesh/protocol/openid-connect/certs}
+    audience: ${OIDC_AUDIENCE:mediamesh-api}
+    bootstrap-subject: ${BOOTSTRAP_ADMIN_SUBJECT:}
+  keycloak:
+    url: ${KEYCLOAK_URL:}
+    realm: ${KEYCLOAK_REALM:mediamesh}
+    client-id: ${KEYCLOAK_PROVISIONER_CLIENT:mediamesh-provisioner}
+    client-secret: ${KEYCLOAK_PROVISIONER_SECRET:}
+  ml:
+    url: ${ML_URL:http://localhost:8001}
+    request-timeout: ${ML_REQUEST_TIMEOUT:1500ms}
+    connect-timeout: ${ML_CONNECT_TIMEOUT:500ms}
+
+management:
+  server:
+    port: ${MANAGEMENT_SERVER_PORT:9091}
+    address: ${MANAGEMENT_SERVER_ADDRESS:127.0.0.1}
+  endpoints:
+    web:
+      exposure:
+        include: prometheus
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      mlSearch:
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: ${ML_CB_WINDOW:10}
+        minimumNumberOfCalls: ${ML_CB_MIN_CALLS:5}
+        failureRateThreshold: ${ML_CB_FAILURE_RATE:50}
+        waitDurationInOpenState: ${ML_CB_OPEN_WAIT:10s}
+        permittedNumberOfCallsInHalfOpenState: ${ML_CB_PROBES:2}
+  bulkhead:
+    instances:
+      mlSearch:
+        maxConcurrentCalls: ${ML_BULKHEAD_CALLS:5}
+        maxWaitDuration: 0ms

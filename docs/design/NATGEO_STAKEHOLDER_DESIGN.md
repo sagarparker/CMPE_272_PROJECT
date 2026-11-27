@@ -317,7 +317,7 @@ The Python ML service is a **standalone MediaMesh component** built for the NatG
 
 | Component | MVP responsibility |
 |---|---|
-| Python Flask API | Implement internal semantic search and optional related-media retrieval |
+| Python FastAPI API | Implement internal semantic search and optional related-media retrieval |
 | CLIP-compatible model | Generate text and image embeddings in one shared vector space |
 | FFmpeg keyframe extractor | Sample a limited number of frames from short video clips and record timestamps |
 | PostgreSQL + pgvector | Persist versioned asset/frame vectors and run similarity queries |

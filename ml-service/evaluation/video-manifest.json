@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "source": "US National Park Service — Yellowstone wildlife video library",
+  "items": [
+    {
+      "id": "video-bison",
+      "filename": "video-bison.mp4",
+      "title": "Bison herd",
+      "source_page": "https://www.nps.gov/media/video/view.htm?id=FD5CDC9C-155D-451F-67CEF3254947F134",
+      "download_url": "https://www.nps.gov/nps-audiovideo/legacy/yell/FD5CDC9C-155D-451F-67CEF3254947F134/yell-341A2744MOV_480x270.mp4",
+      "creator": "NPS/Neal Herbert",
+      "license": "Public domain (as stated on source page)",
+      "license_url": "https://www.nps.gov/media/video/view.htm?id=FD5CDC9C-155D-451F-67CEF3254947F134",
+      "changes": "Official NPS 480x270 download; no local edits.",
+      "sha256": "7de9a469d72b21949d5fb2762883bc8fe7b00f8102d0e661db0f604e56e83721"
+    },
+    {
+      "id": "video-bear",
+      "filename": "video-bear.mp4",
+      "title": "Grizzly Bear (early spring)",
+      "source_page": "https://www.nps.gov/media/video/view.htm?id=DCE37092-155D-451F-67F448AC5DE819B0",
+      "download_url": "https://www.nps.gov/nps-audiovideo/legacy/yell/DCE37092-155D-451F-67F448AC5DE819B0/yell-GBear00452_480x270.mp4",
+      "creator": "NPS/Neal Herbert",
+      "license": "Public domain (as stated on source page)",
+      "license_url": "https://www.nps.gov/media/video/view.htm?id=DCE37092-155D-451F-67F448AC5DE819B0",
+      "changes": "Official NPS 480x270 download; no local edits.",
+      "sha256": "0a6f358eba10bdac01a33b1d17d610e190cc60d61143becd8423c0d8acc27960"
+    }
+  ]
+}

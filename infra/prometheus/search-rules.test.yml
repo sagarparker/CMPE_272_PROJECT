@@ -1,0 +1,240 @@
+rule_files:
+- search-rules.yml
+evaluation_interval: 15s
+fuzzy_compare: true
+tests:
+- name: both-high
+  interval: 1m
+  input_series:
+  - series: mediamesh_search_requests_total{job="mediamesh-api"}
+    values: 0+1000x120
+  - series: mediamesh_search_good_total{job="mediamesh-api"}
+    values: 0+850x120
+  alert_rule_test:
+  - eval_time: 1h
+    alertname: MediaMeshSearchHighErrorBudgetBurn
+    exp_alerts:
+    - exp_labels:
+        severity: page
+        service: mediamesh-search
+      exp_annotations:
+        summary: Semantic search is consuming its error budget rapidly
+        description: The 99% search SLO has a 1h burn rate of 15x and a 5m burn rate
+          of at least 14.4x. Check search failure categories, mlSearch breaker state,
+          bulkhead permits, ML readiness, and database latency. No notification receiver
+          is configured.
+        runbook: docs/observability/SLO_ERROR_BUDGET.md
+  promql_expr_test:
+  - expr: mediamesh:search:burn_rate_1h >= bool 14.4
+    eval_time: 1h
+    exp_samples:
+    - labels: '{}'
+      value: 1
+  - expr: mediamesh:search:burn_rate_5m >= bool 14.4
+    eval_time: 1h
+    exp_samples:
+    - labels: '{}'
+      value: 1
+- name: short-only
+  interval: 1m
+  input_series:
+  - series: mediamesh_search_requests_total{job="mediamesh-api"}
+    values: 0+1000x120
+  - series: mediamesh_search_good_total{job="mediamesh-api"}
+    values: 0+1000x55 55800+800x64
+  alert_rule_test:
+  - eval_time: 1h
+    alertname: MediaMeshSearchHighErrorBudgetBurn
+    exp_alerts: []
+  promql_expr_test:
+  - expr: mediamesh:search:burn_rate_1h >= bool 14.4
+    eval_time: 1h
+    exp_samples:
+    - labels: '{}'
+      value: 0
+  - expr: mediamesh:search:burn_rate_5m >= bool 14.4
+    eval_time: 1h
+    exp_samples:
+    - labels: '{}'
+      value: 1
+- name: long-only
+  interval: 1m
+  input_series:
+  - series: mediamesh_search_requests_total{job="mediamesh-api"}
+    values: 0+1000x120
+  - series: mediamesh_search_good_total{job="mediamesh-api"}
+    values: 0+800x55 45000+1000x64
+  alert_rule_test:
+  - eval_time: 1h
+    alertname: MediaMeshSearchHighErrorBudgetBurn
+    exp_alerts: []
+  promql_expr_test:
+  - expr: mediamesh:search:burn_rate_1h >= bool 14.4
+    eval_time: 1h
+    exp_samples:
+    - labels: '{}'
+      value: 1
+  - expr: mediamesh:search:burn_rate_5m >= bool 14.4
+    eval_time: 1h
+    exp_samples:
+    - labels: '{}'
+      value: 0
+- name: healthy
+  interval: 1m
+  input_series:
+  - series: mediamesh_search_requests_total{job="mediamesh-api"}
+    values: 0+1000x120
+  - series: mediamesh_search_good_total{job="mediamesh-api"}
+    values: 0+1000x120
+  alert_rule_test:
+  - eval_time: 1h
+    alertname: MediaMeshSearchHighErrorBudgetBurn
+    exp_alerts: []
+- name: zero-traffic
+  interval: 1m
+  input_series:
+  - series: mediamesh_search_requests_total{job="mediamesh-api"}
+    values: 0+0x120
+  - series: mediamesh_search_good_total{job="mediamesh-api"}
+    values: 0+0x120
+  alert_rule_test:
+  - eval_time: 1h
+    alertname: MediaMeshSearchHighErrorBudgetBurn
+    exp_alerts: []
+- name: ship-boundary
+  interval: 1m
+  input_series:
+  - series: mediamesh_search_requests_total{job="mediamesh-api"}
+    values: 0+10000x60
+  - series: mediamesh_search_good_total{job="mediamesh-api"}
+    values: 0+9950x60
+  promql_expr_test:
+  - expr: mediamesh:search:budget_remaining_percent
+    eval_time: 1h
+    exp_samples:
+    - labels: '{__name__="mediamesh:search:budget_remaining_percent"}'
+      value: 50
+  - expr: mediamesh:search:budget_policy
+    eval_time: 1h
+    exp_samples:
+    - labels: '{__name__="mediamesh:search:budget_policy"}'
+      value: 1
+  - expr: mediamesh:search:history_complete
+    eval_time: 1h
+    exp_samples:
+    - labels: '{__name__="mediamesh:search:history_complete"}'
+      value: 0
+- name: careful
+  interval: 1m
+  input_series:
+  - series: mediamesh_search_requests_total{job="mediamesh-api"}
+    values: 0+10000x60
+  - series: mediamesh_search_good_total{job="mediamesh-api"}
+    values: 0+9925x60
+  promql_expr_test:
+  - expr: mediamesh:search:budget_remaining_percent
+    eval_time: 1h
+    exp_samples:
+    - labels: '{__name__="mediamesh:search:budget_remaining_percent"}'
+      value: 25
+  - expr: mediamesh:search:budget_policy
+    eval_time: 1h
+    exp_samples:
+    - labels: '{__name__="mediamesh:search:budget_policy"}'
+      value: 2
+  - expr: mediamesh:search:history_complete
+    eval_time: 1h
+    exp_samples:
+    - labels: '{__name__="mediamesh:search:history_complete"}'
+      value: 0
+- name: freeze-boundary
+  interval: 1m
+  input_series:
+  - series: mediamesh_search_requests_total{job="mediamesh-api"}
+    values: 0+10000x60
+  - series: mediamesh_search_good_total{job="mediamesh-api"}
+    values: 0+9900x60
+  promql_expr_test:
+  - expr: mediamesh:search:budget_remaining_percent
+    eval_time: 1h
+    exp_samples:
+    - labels: '{__name__="mediamesh:search:budget_remaining_percent"}'
+      value: 0
+  - expr: mediamesh:search:budget_policy
+    eval_time: 1h
+    exp_samples:
+    - labels: '{__name__="mediamesh:search:budget_policy"}'
+      value: 3
+  - expr: mediamesh:search:history_complete
+    eval_time: 1h
+    exp_samples:
+    - labels: '{__name__="mediamesh:search:history_complete"}'
+      value: 0
+- name: overspent
+  interval: 1m
+  input_series:
+  - series: mediamesh_search_requests_total{job="mediamesh-api"}
+    values: 0+10000x60
+  - series: mediamesh_search_good_total{job="mediamesh-api"}
+    values: 0+9800x60
+  promql_expr_test:
+  - expr: mediamesh:search:budget_remaining_percent
+    eval_time: 1h
+    exp_samples:
+    - labels: '{__name__="mediamesh:search:budget_remaining_percent"}'
+      value: -100
+  - expr: mediamesh:search:budget_policy
+    eval_time: 1h
+    exp_samples:
+    - labels: '{__name__="mediamesh:search:budget_policy"}'
+      value: 3
+  - expr: mediamesh:search:history_complete
+    eval_time: 1h
+    exp_samples:
+    - labels: '{__name__="mediamesh:search:history_complete"}'
+      value: 0
+- name: all-good
+  interval: 1m
+  input_series:
+  - series: mediamesh_search_requests_total{job="mediamesh-api"}
+    values: 0+10000x60
+  - series: mediamesh_search_good_total{job="mediamesh-api"}
+    values: 0+10000x60
+  promql_expr_test:
+  - expr: mediamesh:search:budget_remaining_percent
+    eval_time: 1h
+    exp_samples:
+    - labels: '{__name__="mediamesh:search:budget_remaining_percent"}'
+      value: 100
+  - expr: mediamesh:search:budget_policy
+    eval_time: 1h
+    exp_samples:
+    - labels: '{__name__="mediamesh:search:budget_policy"}'
+      value: 1
+  - expr: mediamesh:search:history_complete
+    eval_time: 1h
+    exp_samples:
+    - labels: '{__name__="mediamesh:search:history_complete"}'
+      value: 0
+- name: no-observations
+  interval: 1m
+  input_series: []
+  promql_expr_test:
+  - expr: mediamesh:search:sli_30d
+    eval_time: 1h
+    exp_samples: []
+  - expr: mediamesh:search:budget_remaining_percent
+    eval_time: 1h
+    exp_samples: []
+  - expr: mediamesh:search:budget_policy
+    eval_time: 1h
+    exp_samples:
+    - labels: '{__name__="mediamesh:search:budget_policy"}'
+      value: 0
+  - expr: mediamesh:search:burn_rate_5m
+    eval_time: 1h
+    exp_samples: []
+  alert_rule_test:
+  - eval_time: 1h
+    alertname: MediaMeshSearchHighErrorBudgetBurn
+    exp_alerts: []

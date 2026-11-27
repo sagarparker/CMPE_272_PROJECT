@@ -1,0 +1,13 @@
+# Explicit local simulation only. No extra published endpoints or production controls.
+services:
+  ml-api:
+    command: [uvicorn, "reliability_demo:create_app", --factory, --app-dir, /app/dev, --host, "0.0.0.0", --port, "8000"]
+    volumes:
+      - ./ml-service/dev/reliability_demo.py:/app/dev/reliability_demo.py:ro
+    environment:
+      MEDIAMESH_LOCAL_DEMO: "1"
+      ML_DEMO_DELAY_SECONDS: ${ML_DEMO_DELAY_SECONDS:-3}
+      ML_DEMO_FAILURE: ${ML_DEMO_FAILURE:-false}
+  backend:
+    environment:
+      ML_REQUEST_TIMEOUT: ${ML_DEMO_REQUEST_TIMEOUT:-1500ms}

@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mediamesh-ml"
+version = "0.1.0"
+description = "MediaMesh internal multimodal indexing and retrieval service"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "fastapi>=0.115,<1",
+    "pydantic-settings>=2.7,<3",
+    "uvicorn>=0.34,<1",
+    "sentence-transformers>=3.4,<6",
+    "transformers>=4.48,<5",
+    "torch>=2.6,<3",
+    "pillow>=11,<13",
+    "azure-identity>=1.25,<2",
+    "azure-storage-blob>=12.27,<13",
+    "psycopg[binary]>=3.2,<4",
+]
+
+[dependency-groups]
+dev = ["httpx>=0.28,<1", "pytest>=8.3,<10", "ruff>=0.11,<1"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = ["database: requires isolated PostgreSQL test service"]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]

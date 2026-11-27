@@ -1,0 +1,253 @@
+{
+  "realm": "mediamesh",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 28800,
+  "clients": [
+    {
+      "clientId": "mediamesh-web",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "http://localhost:8080/*"
+      ],
+      "webOrigins": [
+        "http://localhost:8080"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:8080/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "mediamesh-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "mediamesh-provisioner",
+      "publicClient": false,
+      "secret": "local-provisioner-only",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "defaultClientScopes": [
+        "basic",
+        "kc-admin-api"
+      ],
+      "fullScopeAllowed": false
+    }
+  ],
+  "users": [
+    {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "username": "admin",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "admin@mediamesh.local",
+      "firstName": "Admin",
+      "lastName": "Demo",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "local-demo-only",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000002",
+      "username": "uploader",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "uploader@mediamesh.local",
+      "firstName": "Uploader",
+      "lastName": "Demo",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "local-demo-only",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000003",
+      "username": "researcher",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "researcher@mediamesh.local",
+      "firstName": "Researcher",
+      "lastName": "Demo",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "local-demo-only",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000004",
+      "username": "employee",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "employee@mediamesh.local",
+      "firstName": "Employee",
+      "lastName": "Demo",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "local-demo-only",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "demo.wildlife",
+      "id": "e2f23e73-c1d5-505e-9ac9-d31458165e2d",
+      "firstName": "Wildlife",
+      "lastName": "Demo Contributor",
+      "email": "demo.wildlife@mediamesh.local",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "local-demo-only",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "demo.plants",
+      "id": "0e1732c3-7a2e-5e8b-864f-38736b363e42",
+      "firstName": "Plants",
+      "lastName": "Demo Contributor",
+      "email": "demo.plants@mediamesh.local",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "local-demo-only",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "demo.oceans",
+      "id": "446f3b4b-ee6d-5297-a1b5-07b1b7d21b4c",
+      "firstName": "Oceans",
+      "lastName": "Demo Contributor",
+      "email": "demo.oceans@mediamesh.local",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "local-demo-only",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "demo.marine",
+      "id": "5f77d9d5-818d-52a8-ad66-34d69fc6d6b4",
+      "firstName": "Marine",
+      "lastName": "Demo Contributor",
+      "email": "demo.marine@mediamesh.local",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "local-demo-only",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "demo.birds",
+      "id": "2d436fe7-89b5-54d1-b4b3-164b9b1561ec",
+      "firstName": "Birds",
+      "lastName": "Demo Contributor",
+      "email": "demo.birds@mediamesh.local",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "local-demo-only",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "demo.landscapes",
+      "id": "2b0c0ed9-f627-5c36-bec4-312b1aa2bf8c",
+      "firstName": "Landscapes",
+      "lastName": "Demo Contributor",
+      "email": "demo.landscapes@mediamesh.local",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "local-demo-only",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "demo.researcher",
+      "id": "f6d79549-e841-5ad1-ae29-d70f064a6689",
+      "firstName": "Nature",
+      "lastName": "Demo Researcher",
+      "email": "demo.researcher@mediamesh.local",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "local-demo-only",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "service-account-mediamesh-provisioner",
+      "enabled": true,
+      "serviceAccountClientId": "mediamesh-provisioner",
+      "clientRoles": {
+        "realm-management": [
+          "manage-users"
+        ]
+      }
+    }
+  ],
+  "clientScopeMappings": {
+    "realm-management": [
+      {
+        "client": "mediamesh-provisioner",
+        "roles": [
+          "manage-users"
+        ]
+      }
+    ]
+  }
+}
