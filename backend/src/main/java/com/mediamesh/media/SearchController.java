@@ -13,7 +13,7 @@ import org.springframework.web.server.ResponseStatusException;
 @PreAuthorize("hasRole('RESEARCHER')")
 public class SearchController {
     public record Result(UUID assetId,String title,MediaType mediaType,double score,Double frameTimestampSeconds,
-            String species,String location,AssetStatus processingStatus) {}
+            String species,String location,AssetStatus processingStatus,String generatedDescription) {}
     private final MlSearchClient ml;
     private final AssetRepository assets;
     private final double minSearchSimilarity;
@@ -44,7 +44,7 @@ public class SearchController {
         var results=new ArrayList<Result>();
         for (var match:matches.stream().filter(match -> match.score() >= minSearchSimilarity).toList()) assets.findById(match.assetId()).filter(a -> a.processingStatus()==AssetStatus.READY)
             .ifPresent(a -> results.add(new Result(a.id(),a.title(),a.mediaType(),match.score(),match.frameTimestampSeconds(),
-                    a.species(),a.location(),a.processingStatus())));
+                    a.species(),a.location(),a.processingStatus(),assets.generatedDescription(a.id()))));
         return Map.of("results",results);
     }
 }

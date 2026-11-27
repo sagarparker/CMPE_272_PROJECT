@@ -103,6 +103,7 @@ class SearchReliabilityHttpTest {
                 MediaType.image,"Untitled photo",null,null,null,null,null,null,AssetStatus.READY)));
         when(assets.findById(weakImage)).thenReturn(Optional.of(new Asset(weakImage,owner,"weak-image",
                 MediaType.image,"Elephants", "Elephants",null,null,null,null,null,AssetStatus.READY)));
+        when(assets.generatedDescription(video)).thenReturn("A bear walking across snowy ground.");
         responseBody.set("""
                 {"matches":[
                     {"assetId":"%s","score":0.82,"frameTimestampSeconds":4.0},
@@ -114,6 +115,8 @@ class SearchReliabilityHttpTest {
         search().andExpect(status().isOk())
                 .andExpect(jsonPath("$.results.length()").value(2))
                 .andExpect(jsonPath("$.results[0].assetId").value(video.toString()))
+                .andExpect(jsonPath("$.results[0].generatedDescription")
+                        .value("A bear walking across snowy ground."))
                 .andExpect(jsonPath("$.results[1].assetId").value(image.toString()));
         var source=UUID.randomUUID();
         when(assets.findById(source)).thenReturn(Optional.of(new Asset(source,owner,"source",

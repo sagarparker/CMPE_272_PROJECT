@@ -12,3 +12,5 @@
 /infra/deploy/runtime/
 /infra/deploy/__pycache__/
 /backups/
+
+/frontend/public/fonts/

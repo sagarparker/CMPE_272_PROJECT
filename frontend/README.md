@@ -39,3 +39,18 @@ The test uses the four public local demo accounts and synthetic image/video
 fixtures. It grants and removes roles, creates test catalog records, and
 requires the real CLIP model to be ready. It targets localhost by default;
 `APP_URL` can select another isolated demo instance.
+
+## Shared theme and sign-in illustration
+
+`public/theme.css` defines the portal and login colors and typography. The build
+copies bundled font files and their licenses into `public/fonts` and builds the
+Three.js login scene separately as `dist/assets/login-jungle.js`. The main portal
+does not load Three.js. The login scene uses flat layers, respects reduced motion,
+and includes a pause control and an SVG fallback when WebGL is unavailable.
+
+Both Compose files mount `infra/keycloak-themes/mediamesh` into Keycloak. Newly
+imported local realms select the `mediamesh` login theme. For an existing realm,
+select **Realm settings → Themes → Login theme → mediamesh**; importing a realm
+again does not update an existing realm. The theme loads its shared assets from
+the frontend at the same origin, so deploy the frontend build with the theme.
+Keycloak continues to handle credentials, password updates, and MFA.

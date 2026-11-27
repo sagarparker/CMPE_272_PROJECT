@@ -108,6 +108,7 @@ services:
       KC_BOOTSTRAP_ADMIN_PASSWORD: local-development-only
     volumes:
       - ./infra/keycloak:/opt/keycloak/data/import:ro
+      - ./infra/keycloak-themes/mediamesh:/opt/keycloak/themes/mediamesh:ro
       - keycloak-data:/opt/keycloak/data
   azurite:
     image: mcr.microsoft.com/azure-storage/azurite:3.38.0

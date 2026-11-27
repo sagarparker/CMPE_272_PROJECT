@@ -76,6 +76,7 @@ services:
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-}
     volumes:
       - ./infra/deploy/runtime/realm:/opt/keycloak/data/import:ro
+      - ./infra/keycloak-themes/mediamesh:/opt/keycloak/themes/mediamesh:ro
     depends_on:
       postgres: {condition: service_healthy}
   backend:

@@ -14,6 +14,11 @@ function ErrorNotice({ error }) {
     </div>
   ) : null;
 }
+function MediaGlyph({ video = false, upload = false }) {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {upload ? <><path d="M12 16V3m-4 4 4-4 4 4M4 15v5h16v-5" /></> : video ? <><rect x="3" y="5" width="13" height="14" rx="2" /><path d="m16 10 5-3v10l-5-3" /></> : <><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8" cy="8" r="1.5" /><path d="m3 17 5-5 4 4 4-6 5 7" /></>}
+  </svg>;
+}
 function MetadataFields({ asset = {} }) {
   return (
     <>
@@ -27,7 +32,7 @@ function MetadataFields({ asset = {} }) {
         />
       </label>
       <label>
-        Shot notes
+        Additional notes (optional)
         <textarea
           name="description"
           maxLength="4000"
@@ -133,16 +138,21 @@ function Upload() {
   }
   return (
     <>
-      <div className="section-title">
+      <div className="section-title workspace-banner upload-banner">
+        <span className="eyebrow">CONTRIBUTIONS</span>
         <h2>Contribute to the archive</h2>
         <p>Upload a photograph or a documentary clip up to 3 minutes.</p>
       </div>
       <ErrorNotice error={error} />
-      <div className="columns">
-        <section className="panel">
+      <div className="columns contribution-layout">
+        <section className="panel upload-panel">
+          <div className="panel-heading"><span className="section-marker">01</span><div><h3>Add media</h3><p>A new perspective for the archive.</p></div></div>
           <form onSubmit={submit}>
-            <label>
-              Media file
+            <label className="upload-picker">
+              <span className="upload-glyph"><MediaGlyph upload /></span>
+              <span className="picker-title">Choose a photograph or video</span>
+              <span className="picker-hint">JPEG, PNG, MP4 or MOV · Up to 100 MB</span>
+              <span className="sr-only">Media file</span>
               <input
                 name="file"
                 type="file"
@@ -150,7 +160,8 @@ function Upload() {
                 accept="image/jpeg,image/png,video/mp4,video/quicktime"
               />
             </label>
-            <MetadataFields />
+            <div className="upload-description-note">A visual description is generated automatically after upload.</div>
+            <div className="upload-metadata"><div className="form-section-heading">Media details</div><MetadataFields /></div>
             <button disabled={busy}>
               {busy ? `Uploading ${progress}%` : "Upload media"}
             </button>
@@ -163,12 +174,13 @@ function Upload() {
             )}
           </form>
         </section>
-        <section className="panel">
-          <h3>Your contributions</h3>
-          {assets.length === 0 && <p>No contributions on this page.</p>}
+        <section className="panel contributions-panel">
+          <div className="panel-heading"><span className="section-marker">02</span><div><h3>Your contributions</h3><p>Manage media and track processing.</p></div><span className="page-count">{assets.length} on this page</span></div>
+          {assets.length === 0 && <div className="contributions-empty"><MediaGlyph /><h4>Your archive starts here</h4><p>Uploaded media and its processing status will appear here.</p></div>}
           {assets.map((asset) => (
-            <article className="asset-row" key={asset.assetId}>
-              <div>
+            <article className="asset-row contribution-row" key={asset.assetId}>
+              <span className="asset-type-icon"><MediaGlyph video={asset.mediaType === "video"} /></span>
+              <div className="contribution-copy">
                 <strong>{asset.title}</strong>
                 <p>
                   {asset.species || asset.mediaType} ·{" "}
@@ -189,7 +201,9 @@ function Upload() {
               </button>
             </article>
           ))}
-          <div className="actions">
+          <div className="contribution-pagination">
+            <span>Page {Math.floor(offset / 50) + 1}</span>
+            <div className="actions">
             <button
               className="secondary"
               disabled={!offset}
@@ -204,6 +218,7 @@ function Upload() {
             >
               Next
             </button>
+            </div>
           </div>
         </section>
       </div>
@@ -269,7 +284,7 @@ function Research() {
     setError(""); setBusy(true); setPreviewIndex(null);
     try {
       const response = await post(`/assets/${asset.assetId}/similar`);
-      if (id === request.current) { setResults(response.results); setResultLabel(`Related to ${asset.title}`); }
+      if (id === request.current) { setResults(response.results); setResultLabel(`Similar to ${asset.title}`); }
     } catch (e) { if (id === request.current) setError(e.message); }
     finally { if (id === request.current) setBusy(false); }
   }
@@ -278,17 +293,17 @@ function Research() {
     ["Birds", "birds in flight"], ["Landscapes", "mountains and valleys"]];
   return (
     <section className="research-workspace">
-      <div className="discovery-heading">
-        <div><span className="eyebrow">A world worth exploring</span>
-          <h2>Find your next story<span>.</span></h2>
-          <p>From the wild to the underwater world. Describe a scene and see where it takes you.</p></div>
-        <span className="archive-stamp">THE EDITORIAL<br />COLLECTION / 01</span>
+      <div className="discovery-heading workspace-banner">
+        <div><span className="eyebrow">EDITORIAL WORKSPACE</span>
+          <h2>Search the archive</h2>
+          <p>Find photographs and video by subject, scene, or setting.</p></div>
+        <div className="banner-aside"><span className="banner-frame" aria-hidden="true" /><span>THE NATURAL WORLD<br /><strong>In focus.</strong></span></div>
       </div>
       <ErrorNotice error={error} />
       <form ref={form} className="panel search discovery-search" onSubmit={search}>
         <label htmlFor="archive-query">Describe what you need</label>
         <div className="query-row">
-          <span aria-hidden="true" className="search-icon">⌕</span>
+          <svg aria-hidden="true" className="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 5 5" /></svg>
           <input id="archive-query" name="query" required maxLength="1000" value={query}
             onChange={event => setQuery(event.target.value)}
             placeholder="Try ‘birds in flight over water’" />
@@ -310,7 +325,7 @@ function Research() {
         </div>
       </form>
       {results && <div className="gallery-toolbar">
-        <div><h3>{resultLabel.startsWith("Related to ") ? "Keep exploring" : `Results for “${resultLabel}”`}</h3>
+        <div><h3>{resultLabel.startsWith("Similar to ") ? "Visually similar images" : `Results for “${resultLabel}”`}</h3>
           <p role="status">{results.length} matching assets · Sorted by relevance</p></div>
         <div className="density-toggle" role="group" aria-label="Gallery layout">
           <button className="secondary" aria-pressed={density === "comfortable"} onClick={() => setDensity("comfortable")}>Comfortable</button>
@@ -320,9 +335,9 @@ function Research() {
       {busy && <div className="gallery-loading" role="status">Finding moments in the archive<span>…</span></div>}
       {results?.length === 0 && !busy && <div className="gallery-empty"><span aria-hidden="true">⌕</span>
         <h3>A new angle might help.</h3><p>Try a broader description or remove a filter to explore more of the archive.</p></div>}
-      {!results && !busy && <div className="discovery-empty"><span className="eyebrow">Start with curiosity</span>
-        <h3>Every image has a story.<br />What will yours be?</h3><p>Choose a subject above, or search in your own words.</p>
-        <div className="discovery-coordinates" aria-hidden="true">WILDLIFE / BOTANY / OCEANS / THE NATURAL WORLD</div></div>}
+      {!results && !busy && <div className="discovery-empty"><div><span className="eyebrow">A DIFFERENT PERSPECTIVE</span>
+        <h3>Start with a subject.<br />Discover the scene.</h3><p>Describe an animal, a landscape, or a moment you need.</p></div>
+        <div className="search-examples"><span>TRY A SEARCH</span>{[["01", "Wildlife", "elephants in the savanna"], ["02", "Underwater", "sea turtle underwater"], ["03", "Landscapes", "mountains and valleys"]].map(([number, label, prompt]) => <button type="button" key={number} onClick={() => search(null, prompt)}><span>{number}</span><div><strong>{label}</strong><small>{prompt}</small></div><span aria-hidden="true">↗</span></button>)}</div></div>}
       <div className={`results gallery-${density}`} aria-busy={busy}>
         {results?.map((asset, index) => <ResultCard key={asset.assetId} asset={asset}
           onPreview={() => setPreviewIndex(index)} onDownload={() => download(asset)} onRelated={() => similar(asset)} />)}
@@ -361,7 +376,7 @@ function CreateAccount({ me, onCreated }) {
     }
   }
   return (
-    <section className="panel">
+    <section className="panel account-create">
       <h3>Create an account</h3>
       <p>
         Share the temporary password privately. At first sign-in the person
@@ -471,6 +486,7 @@ function Admin({ me, onChanged }) {
   return (
     <>
       <div className="section-title">
+        <span className="eyebrow">ADMINISTRATION</span>
         <h2>Manage library access</h2>
         <p>
           Create accounts for researchers and uploaders. Role changes apply on
@@ -486,9 +502,10 @@ function Admin({ me, onChanged }) {
           {status}
         </div>
       )}
-      <button className="secondary" onClick={load}>
-        Refresh users
-      </button>
+      <div className="admin-toolbar">
+        <h3>Workspace members <span>{users.length} accounts</span></h3>
+        <button className="secondary" onClick={load}>Refresh users</button>
+      </div>
       <section className="panel user-list">
         {users.map((user) => (
           <form
@@ -590,6 +607,7 @@ function App() {
           MediaMesh<span className="brand-sub">EDITORIAL ARCHIVE</span>
         </a>
         <div className="identity">
+          <span className="identity-avatar" aria-hidden="true">{me?.displayName?.split(" ").filter(Boolean).slice(0,2).map(name=>name[0]).join("")}</span>
           <span>{me?.displayName}</span>
           <button className="secondary" onClick={logout}>
             Sign out
