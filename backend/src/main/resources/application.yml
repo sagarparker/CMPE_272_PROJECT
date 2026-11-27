@@ -29,6 +29,7 @@ mediamesh:
     client-secret: ${KEYCLOAK_PROVISIONER_SECRET:}
   ml:
     url: ${ML_URL:http://localhost:8001}
+    search-min-similarity: ${ML_SEARCH_MIN_SIMILARITY:0.67}
     request-timeout: ${ML_REQUEST_TIMEOUT:1500ms}
     connect-timeout: ${ML_CONNECT_TIMEOUT:500ms}
 

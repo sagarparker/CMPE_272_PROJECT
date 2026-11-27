@@ -8,7 +8,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from mediamesh_ml.config import Settings
-from mediamesh_ml.contracts import ClaimedJob, VectorRecord
+from mediamesh_ml.contracts import ClaimedJob, GeneratedDescription, VectorRecord
 from mediamesh_ml.database import connection
 from mediamesh_ml.vectors import replace_in_transaction
 
@@ -139,7 +139,8 @@ class PostgresJobStore:
             raise StaleClaim("Job lease is expired or no longer owned")
 
     def complete(
-        self, job: ClaimedJob, records: Sequence[VectorRecord], *, playback_key: str | None = None
+        self, job: ClaimedJob, records: Sequence[VectorRecord], *, playback_key: str | None = None,
+        generated_description: GeneratedDescription | None = None
     ) -> None:
         if not records:
             raise ValueError("Cannot mark an empty index READY")
@@ -151,7 +152,10 @@ class PostgresJobStore:
             raise ValueError("Video jobs require timestamped vectors")
         with connection(self.settings) as conn:
             self._require_claim(conn, job)
-            replace_in_transaction(conn, job.asset_id, records[0].model_version, records)
+            replace_in_transaction(
+                conn, job.asset_id, records[0].model_version, records,
+                dimensions=self.settings.vector_dimensions,
+            )
             conn.execute(
                 f"UPDATE {self.jobs_table} SET status='SUCCEEDED', claim_token=NULL, "
                 "lease_expires_at=NULL, last_error=NULL WHERE id=%s",
@@ -162,6 +166,12 @@ class PostgresJobStore:
                 f"WHERE {self.state_key}=%s",
                 (job.asset_id,),
             )
+            if generated_description is not None and self.settings.production_mode:
+                conn.execute(
+                    "UPDATE public.assets SET generated_description=%s, description_model=%s, "
+                    "description_generated_at=clock_timestamp() WHERE id=%s",
+                    (generated_description.text, generated_description.model, job.asset_id),
+                )
             if playback_key is not None and self.settings.production_mode:
                 conn.execute(
                     "UPDATE public.assets SET playback_key=%s WHERE id=%s",

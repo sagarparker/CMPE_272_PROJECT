@@ -5,7 +5,7 @@ import json
 from uuid import UUID
 
 from mediamesh_ml.config import Settings
-from mediamesh_ml.embeddings import ClipEngine
+from mediamesh_ml.embeddings import create_engine
 from mediamesh_ml.indexing import IndexingService
 from mediamesh_ml.media import LocalMediaSource
 from mediamesh_ml.vectors import PgVectorRepository
@@ -28,7 +28,7 @@ def main():
         print(json.dumps({"assetId": str(args.asset_id), "removed": True}))
         return
     service = IndexingService(
-        ClipEngine(settings),
+        create_engine(settings),
         LocalMediaSource(settings.media_root, max_bytes=settings.media_max_bytes),
         repository,
         video_sampler=VideoSampler(settings),

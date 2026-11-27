@@ -10,6 +10,11 @@ x-ml: &ml
   environment: &ml-env
     ML_DATABASE_URL: postgresql://mediamesh:local-development-only@postgres:5432/mediamesh
     ML_PRODUCTION_MODE: "true"
+    ML_EMBEDDING_MODEL: ${ML_EMBEDDING_MODEL:-embeddinggemma2}
+    ML_VERIFY_CAPTIONS: ${ML_VERIFY_CAPTIONS:-true}
+    ML_SEARCH_MIN_SIMILARITY: ${ML_SEARCH_MIN_SIMILARITY:-0.67}
+    ML_CAPTION_URL: ${ML_CAPTION_URL:-http://host.docker.internal:11434}
+    ML_CAPTION_MODEL: ${ML_CAPTION_MODEL:-gemma4:e2b-it-q4_K_M}
     ML_AZURE_EMULATOR_ENDPOINT: http://azurite:10000/devstoreaccount1
     ML_AZURE_STORAGE_CONTAINER: mediamesh
     HF_HOME: /data/models
@@ -17,9 +22,27 @@ x-ml: &ml
   volumes:
     - model-cache:/data/models
   depends_on:
+    gemma-embed:
+      condition: service_healthy
     backend:
       condition: service_healthy
 services:
+  gemma-embed:
+    image: mediamesh-ml:integrated
+    init: true
+    command: [uvicorn, mediamesh_ml.gemma_server:create_app, --factory, --host, 0.0.0.0, --port, '8000']
+    environment:
+      HF_HOME: /data/models
+      ML_MODEL_CACHE: /data/models
+      OMP_NUM_THREADS: '4'
+    volumes:
+      - model-cache:/data/models
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready',timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+      start_period: 60s
   prometheus:
     image: prom/prometheus:v3.5.0
     command:
@@ -120,8 +143,9 @@ services:
       AZURE_STORAGE_PUBLIC_ENDPOINT: http://localhost:10000/devstoreaccount1
       AZURE_STORAGE_CONTAINER: mediamesh
       ML_URL: http://ml-api:8000
+      ML_SEARCH_MIN_SIMILARITY: ${ML_SEARCH_MIN_SIMILARITY:-0.67}
       MANAGEMENT_SERVER_ADDRESS: 0.0.0.0
-      ML_REQUEST_TIMEOUT: ${ML_REQUEST_TIMEOUT:-1500ms}
+      ML_REQUEST_TIMEOUT: ${ML_REQUEST_TIMEOUT:-8s}
     depends_on:
       postgres:
         condition: service_healthy
@@ -142,8 +166,13 @@ services:
       start_period: 120s
   ml-worker:
     <<: *ml
+    environment:
+      <<: *ml-env
+      ML_CAPTION_ENABLED: ${ML_CAPTION_ENABLED:-true}
+      ML_CAPTION_URL: ${ML_CAPTION_URL:-http://host.docker.internal:11434}
+      ML_CAPTION_MODEL: ${ML_CAPTION_MODEL:-gemma4:e2b-it-q4_K_M}
     command: [python, -m, mediamesh_ml.worker]
-    stop_grace_period: 150s
+    stop_grace_period: 360s
   frontend:
     build: ./frontend
     ports: ["127.0.0.1:8080:80"]

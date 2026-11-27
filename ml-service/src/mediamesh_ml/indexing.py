@@ -23,12 +23,14 @@ class IndexingService:
         repository: VectorRepository,
         video_sampler: VideoSampler | None = None,
         playback=None,
+        describer=None,
     ):
         self.engine = engine
         self.source = source
         self.repository = repository
         self.video_sampler = video_sampler
         self.playback = playback
+        self.describer = describer
 
     @property
     def model_version(self) -> str:
@@ -40,6 +42,18 @@ class IndexingService:
         if len(embeddings) != 1:
             raise ValueError("Expected exactly one image embedding")
         return [VectorRecord(asset_id, embeddings[0], self.model_version)]
+
+    def prepare_description(self, reference: str, media_type: str):
+        if self.describer is None:
+            return None
+        with self.source.materialize(reference) as path:
+            if media_type == "image":
+                return self.describer.describe([path])
+            with self.video_sampler.extract(path) as frames:
+                if not frames:
+                    raise ValueError("Video has no frames to describe")
+                indexes = sorted({0, len(frames) // 2, len(frames) - 1})
+                return self.describer.describe([frames[i].path for i in indexes])
 
     def index_image(self, asset_id: UUID, reference: str) -> list[VectorRecord]:
         records = self.prepare_image(asset_id, reference)

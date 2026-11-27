@@ -1,4 +1,9 @@
-# Embedding model and initial evaluation
+# Embedding models
+
+The integrated local stack now uses **EmbeddingGemma 2**. See its configuration
+and indexing notes below. The CLIP and SigLIP evaluations are historical baselines.
+
+## Original CLIP baseline
 
 - Model: `sentence-transformers/clip-ViT-B-32`.
 - Immutable revision: `327ab6726d33c0e22f920c83f2ff9e4bd38ca37f`.
@@ -40,3 +45,123 @@ probabilities. Labels are subjective, and pretraining overlap is unknown.
 
 Vectors of different revisions/preprocessing versions must not be mixed. A new
 model/dimension requires explicit reindexing and, if necessary, a new migration.
+
+## Local SigLIP 2 trial
+
+The optional `compose.siglip2.yaml` overlay selects
+`google/siglip2-base-patch16-224` for the local API and worker. It uses the pinned
+revision `75de2d55ec2d0b4efc50b3e9ad70dba96a7b2fa2`, stores 768-dimensional vectors
+alongside CLIP vectors, and starts with a `0.09` cosine cutoff for this model.
+The worker retains the existing video-frame sampling strategy.
+
+From the repository root, start the backend to apply the vector migration,
+then index existing READY photos and videos before switching search:
+
+```bash
+docker compose up -d --build --wait backend
+docker compose -f compose.yaml -f compose.siglip2.yaml run --rm --build --no-deps ml-api \
+  python -m mediamesh_ml.reindex
+docker compose -f compose.yaml -f compose.siglip2.yaml up -d --no-deps --wait backend ml-api ml-worker
+docker compose restart frontend
+```
+
+The backfill skips assets that already have an index for the selected model.
+To keep using SigLIP 2 with the infrastructure manager, set
+`COMPOSE_FILE=compose.yaml:compose.siglip2.yaml`. To return to CLIP, use the
+base configuration and backfill any uploads made during the trial:
+
+```bash
+docker compose -f compose.yaml run --rm --no-deps ml-api python -m mediamesh_ml.reindex
+docker compose -f compose.yaml up -d --no-deps --wait backend ml-api ml-worker
+docker compose restart frontend
+```
+
+## EmbeddingGemma 2 (local default)
+
+The integrated Compose stack uses `google/embeddinggemma-2` at revision
+`f9972ac22e696a105c482202646979e33e4b5a1e`, with normalized 768-dimensional vectors.
+One `gemma-embed` process serves the API and worker. Only text and vision encoders
+are loaded. CPU inference uses float32; float16 is unsupported by this model.
+Text searches use the model's SearchQuery prompt; images use no text prompt.
+Images are bounded to 768 pixels on the longest edge. Videos retain sampled-frame
+retrieval. The API filters text and similar-image results below 0.67. Text search uses 80% image cosine similarity plus 20% metadata cosine similarity (title, description, species, location). Metadata uses Gemma’s Document prompt and is cached by current-text fingerprint; missing metadata scores zero. Fusion happens before the result limit. Related-image scores remain visual-only.
+
+Start with `./infra/manage.sh start`. Existing model vectors cannot be reused:
+apply backend migrations and run `docker compose run --rm --no-deps ml-api python -m mediamesh_ml.reindex` only when existing catalog media is available.
+Qwen runtime code and its model cache have been removed; its applied database
+migration is retained for Flyway checksum compatibility.
+
+
+## Visual descriptions on upload
+
+New uploads in the integrated local stack are described once by native Ollama
+using `gemma4:e2b-it-q4_K_M`. Start Ollama and install the model before uploading:
+
+```bash
+ollama pull gemma4:e2b-it-q4_K_M
+./infra/manage.sh start
+```
+
+The worker connects to `http://host.docker.internal:11434`; override
+`ML_CAPTION_URL` and `ML_CAPTION_MODEL` for a different local inference service.
+Set `ML_CAPTION_ENABLED=false` to disable caption generation. Native Ollama lets
+Apple Silicon use its GPU while the embedding service remains in Docker.
+
+Generation occurs during asynchronous PROCESSING, with lease renewal. A temporary
+caption failure follows the upload job's existing retry policy. A successful
+caption, its model name, vectors, and READY state are committed in one fenced
+transaction. Videos use up to three sampled frames, not the audio track or a
+claim to understand every moment of the video.
+
+Generated text lives in `assets.generated_description`, with model and generation
+time alongside it. User-written `description` is preserved. Authorized asset
+previews label this text as AI-generated. It joins the title, description,
+species and location in cached semantic text embeddings for the existing
+80% image / 20% text score. The 67 cutoff is unchanged. Existing uploads are
+not automatically regenerated; run the resumable backfill below to describe them. Captions are model predictions and may contain
+errors; they do not enforce every condition in a search query.
+
+
+To describe previously uploaded READY photos and sampled video frames:
+
+```bash
+docker compose run --rm --no-deps ml-worker python -m mediamesh_ml.captions backfill
+```
+
+The command skips existing generated descriptions, preserves authored metadata
+and all image vectors, and refreshes cached text embeddings. Each successful
+asset is saved immediately so an interrupted run can resume. Missing source
+files are reported individually. Use `--asset-id UUID` to target one asset.
+
+
+## Query-to-caption verification
+
+The integrated local API verifies text-search candidates against their generated
+visual descriptions using native Gemma 4. Candidates must first meet the 0.67
+hybrid cutoff. Up to 20 candidates are checked in a bounded batch; missing visual
+evidence and unsupported subject/action/setting requirements are excluded. This
+checks saved caption evidence, not image pixels, and is not a perfect scene
+verifier. Related-image results keep their visual-only ranking.
+
+Decisions are cached by exact query and full caption, so a changed caption is
+rechecked. A verifier timeout or malformed response returns search-unavailable;
+unchecked candidates are never substituted. Local verification has a 6-second
+timeout; the local backend allows 8 seconds for ML search. Cold model loading
+and uncached verification add latency. `ML_VERIFY_CAPTIONS=false` disables the
+additional check. Caption generation and verification share ML_CAPTION_URL and
+ML_CAPTION_MODEL. Normal image/text embedding weights remain 80/20.
+
+
+Verification normalizes query casing and whitespace before decisions and cache
+lookup. Explicit positive basic-color requirements additionally need matching
+color evidence in the caption before model verification. Missing color evidence
+rejects a candidate conservatively. Negations and alternative colors are left
+to the model; background-versus-subject binding still requires model judgment.
+This guard can hide a truly colored subject if its caption omits that color.
+
+
+The GitHub Actions browser smoke test explicitly uses CLIP with captions and
+verification disabled because hosted runners do not provide the native Ollama
+service. Python/database tests cover caption jobs and scoped backfills with
+controlled inference responses. The complete seed and actual local Gemma
+image/caption/text generation have been validated separately on Apple Silicon.

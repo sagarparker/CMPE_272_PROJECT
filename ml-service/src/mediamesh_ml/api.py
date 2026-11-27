@@ -12,7 +12,7 @@ from starlette.exceptions import HTTPException
 
 from mediamesh_ml.config import Settings
 from mediamesh_ml.contracts import InvalidQuery
-from mediamesh_ml.embeddings import ClipEngine
+from mediamesh_ml.embeddings import create_engine
 from mediamesh_ml.logging_json import RequestCorrelationMiddleware, configure_logging
 from mediamesh_ml.schemas import (
     ErrorResponse,
@@ -23,6 +23,7 @@ from mediamesh_ml.schemas import (
 )
 from mediamesh_ml.search import SearchService
 from mediamesh_ml.vectors import PgVectorRepository
+from mediamesh_ml.verification import CaptionVerifier
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,11 @@ def create_app(settings: Settings | None = None, *, search_service=None) -> Fast
     service = (
         search_service
         if search_service is not None
-        else SearchService(ClipEngine(settings), PgVectorRepository(settings))
+        else SearchService(
+            create_engine(settings), PgVectorRepository(settings),
+            hybrid_text=settings.production_mode and settings.embedding_model == "embeddinggemma2",
+            verifier=CaptionVerifier(settings) if settings.verify_captions else None,
+        )
     )
 
     @asynccontextmanager

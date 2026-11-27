@@ -8,9 +8,10 @@ from contextlib import contextmanager
 
 from PIL import UnidentifiedImageError
 
+from mediamesh_ml.captions import VisualDescriber
 from mediamesh_ml.config import Settings
 from mediamesh_ml.contracts import JobStore
-from mediamesh_ml.embeddings import ClipEngine
+from mediamesh_ml.embeddings import create_engine
 from mediamesh_ml.indexing import IndexingService
 from mediamesh_ml.jobs import PostgresJobStore, StaleClaim
 from mediamesh_ml.logging_json import configure_logging, request_id
@@ -66,9 +67,13 @@ class Worker:
                     records, playback_key = self.indexer.prepare_video_job(
                         job.asset_id, job.media_reference
                     )
+                description = self.indexer.prepare_description(
+                    job.media_reference, job.media_type
+                )
                 if lost.is_set():
                     raise StaleClaim("Lease renewal lost")
-                self.store.complete(job, records, playback_key=playback_key)
+                extra = {"generated_description": description} if description is not None else {}
+                self.store.complete(job, records, playback_key=playback_key, **extra)
             logger.info("Completed job %s on attempt %s", job.job_id, job.attempt)
         except StaleClaim:
             logger.warning("Discarded stale result for job %s", job.job_id)
@@ -105,7 +110,7 @@ def main() -> int:
     stop = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.set())
-    engine = ClipEngine(settings)
+    engine = create_engine(settings)
     engine.load()  # Reuse one model across jobs; do not lease a job during model startup.
     source = (
         AzureBlobMediaSource(settings)
@@ -122,6 +127,8 @@ def main() -> int:
             sampler,
             # Only the catalog (Blob) source can store derived playback copies.
             PlaybackPublisher(settings, source, sampler) if settings.production_mode else None,
+            VisualDescriber(settings)
+            if settings.production_mode and settings.caption_enabled else None,
         ),
         settings,
     )

@@ -44,8 +44,8 @@ never be used as real deployment credentials.
 2. Sign in as `demo.researcher`. Search `yellow sunflower`, `sea turtle
    underwater`, `a puffin bird`, `ocean waves`, or `elephants drinking at a
    watering hole`. Preview a result and inspect its credit.
-3. Try `mountain lake`: visually related coastlines can also appear. Search uses
-   real similarity ranking rather than hard-coded keyword results. This curated
+3. Try `a waterfall surrounded by green rainforest` to find the Eden Project
+   waterfall photo by its visual content. This curated
    showcase is separate from the existing retrieval evaluation manifests and
    does not establish accuracy on a held-out benchmark.
 4. Use the existing reliability demonstrations separately to show the SLO,
@@ -70,8 +70,10 @@ Domain grouping uses ownership and title prefixes, without a new database schema
 
 **3. Upload and verification:**
 [`seed-demo.mjs`](../../frontend/scripts/seed-demo.mjs) initiates uploads, PUTs
-files to signed URLs, and completes them. The real worker creates CLIP vectors
-and marks assets READY. The script checks all catalog counts, cross-uploader
+files to signed URLs, and completes them. The real worker creates Gemma image/frame embeddings and visual descriptions
+and marks assets READY. Before search checks, the script fills any missing
+captions and embeddings for the exact seeded IDs and verifies that their
+semantic text embeddings reflect the current descriptions. The script checks all catalog counts, cross-uploader
 read denial, uploader search denial, six search prompts, signed access and a
 rendered sunflower preview. Uploader screens must show their expected counts.
 
@@ -99,3 +101,20 @@ Retain credits and applicable license terms, including CC BY-SA requirements.
 Public-domain labels reflect the source's statement; other rights or
 jurisdictional restrictions can apply. This is not National Geographic content
 or an official NatGeo collection. Review source terms before publication.
+
+
+### Caption generation prerequisites
+
+`./infra/seed-demo.sh` now starts/rebuilds the local stack and enables captioning.
+Keep native Ollama running. The script pulls `gemma4:e2b-it-q4_K_M` if needed when
+using the default local endpoint, and checks image support before seeding.
+For a different Ollama service, set `ML_CAPTION_URL` and `ML_CAPTION_MODEL`.
+A missing caption service or incomplete generation fails the seed run explicitly.
+
+Fresh uploads generate descriptions during asynchronous processing. Existing
+READY fixture assets receive any missing descriptions and current image/frame
+embeddings through `mediamesh_ml.seed_enrich`; their text embeddings are then
+refreshed. Existing generated descriptions and user-written metadata are kept.
+Only seed asset IDs are enriched, so unrelated uploads with missing media do not
+block a demo rerun. A fresh dataset can take several minutes; the READY wait
+allows 30 minutes and interrupted runs can resume.

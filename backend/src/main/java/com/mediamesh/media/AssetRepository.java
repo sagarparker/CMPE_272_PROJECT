@@ -41,6 +41,10 @@ public class AssetRepository {
         return jdbc.queryForList("SELECT playback_key FROM assets WHERE id=? AND playback_key IS NOT NULL",
                 String.class, id).stream().findFirst();
     }
+    public String generatedDescription(UUID id) {
+        var rows=jdbc.queryForList("SELECT generated_description FROM assets WHERE id=?",String.class,id);
+        return rows.isEmpty() ? null : rows.get(0);
+    }
     public Optional<Asset> findById(UUID id) {
         return jdbc.query("SELECT * FROM assets WHERE id=?", MAPPER, id).stream().findFirst();
     }

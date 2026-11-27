@@ -115,7 +115,7 @@ test("SSO, role grants, image/video indexing, search, preview, download and revo
     ).toBe(202);
     await researcher.page
       .getByLabel("Describe what you need")
-      .fill("a red photograph");
+      .fill("a solid red screen");
     await researcher.page.locator(".search-filters summary").click();
     await researcher.page
       .getByLabel("Species", { exact: true })
@@ -208,7 +208,7 @@ test("SSO, role grants, image/video indexing, search, preview, download and revo
     const search = await researcher.page.request.post("/api/search", {
       headers: { Authorization: researcher.token },
       data: {
-        query: "red video",
+        query: "a solid red screen",
         mediaType: "video",
         species: subject,
         limit: 10,

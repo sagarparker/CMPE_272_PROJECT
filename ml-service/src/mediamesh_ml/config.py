@@ -1,6 +1,7 @@
 """Environment configuration; constructing settings never loads a model or database."""
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, PostgresDsn, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -21,6 +22,15 @@ class Settings(BaseSettings):
     media_root: Path = Path("/data/media")
     media_max_bytes: int = Field(default=100_000_000, ge=1)
     model_cache: Path = Path("/data/models")
+    embedding_model: Literal["clip", "siglip2", "embeddinggemma2"] = "clip"
+    gemma_embedding_url: str = "http://gemma-embed:8000"
+    search_min_similarity: float = Field(default=0.67, ge=-1, le=1)
+    verify_captions: bool = False
+    verification_timeout_seconds: int = Field(default=6, ge=1, le=30)
+    caption_enabled: bool = False
+    caption_url: str = "http://host.docker.internal:11434"
+    caption_model: str = "gemma4:e2b-it-q4_K_M"
+    caption_timeout_seconds: int = Field(default=180, ge=1, le=600)
     model_name: str = Field(default="sentence-transformers/clip-ViT-B-32", min_length=1)
     model_revision: str = "327ab6726d33c0e22f920c83f2ff9e4bd38ca37f"
     embedding_dimensions: int = Field(default=512, ge=1)
@@ -40,6 +50,12 @@ class Settings(BaseSettings):
     video_timeout_seconds: float = Field(default=120, gt=0)
     video_playback_max_edge: int = Field(default=1920, ge=16, le=3840)
     video_playback_timeout_seconds: float = Field(default=300, gt=0)
+
+    @property
+    def vector_dimensions(self) -> int:
+        if self.embedding_model == "embeddinggemma2":
+            return 768
+        return 768 if self.embedding_model == "siglip2" else self.embedding_dimensions
 
     def model_post_init(self, __context: object) -> None:
         # Validate without including credentials in a validation error or repr.

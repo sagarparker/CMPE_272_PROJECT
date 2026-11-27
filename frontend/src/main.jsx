@@ -311,7 +311,7 @@ function Research() {
       </form>
       {results && <div className="gallery-toolbar">
         <div><h3>{resultLabel.startsWith("Related to ") ? "Keep exploring" : `Results for “${resultLabel}”`}</h3>
-          <p role="status">{results.length} matching assets · Sorted by visual similarity</p></div>
+          <p role="status">{results.length} matching assets · Sorted by relevance</p></div>
         <div className="density-toggle" role="group" aria-label="Gallery layout">
           <button className="secondary" aria-pressed={density === "comfortable"} onClick={() => setDensity("comfortable")}>Comfortable</button>
           <button className="secondary" aria-pressed={density === "compact"} onClick={() => setDensity("compact")}>Compact</button>

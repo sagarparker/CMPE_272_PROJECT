@@ -6,6 +6,13 @@ from functools import cached_property
 from mediamesh_ml.config import Settings
 from mediamesh_ml.contracts import InvalidQuery, ModelIdentity, embedding_version
 
+SIGLIP2_ID = ModelIdentity(
+    "google/siglip2-base-patch16-224",
+    "75de2d55ec2d0b4efc50b3e9ad70dba96a7b2fa2",
+    768,
+    "siglip2-rgb-l2-v1",
+)
+
 
 class ClipEngine:
     def __init__(self, settings: Settings):
@@ -48,7 +55,6 @@ class ClipEngine:
         _ = self.model
 
     def _encode(self, inputs):
-        import numpy as np
         import torch
 
         with torch.inference_mode():
@@ -59,8 +65,13 @@ class ClipEngine:
                 normalize_embeddings=True,
                 show_progress_bar=False,
             )
+        return self._validated_vectors(output, len(inputs))
+
+    def _validated_vectors(self, output, count):
+        import numpy as np
+
         output = np.asarray(output, dtype=np.float32)
-        if output.shape != (len(inputs), self.identity.dimensions):
+        if output.shape != (count, self.identity.dimensions):
             raise ValueError("Unexpected embedding shape")
         if not np.isfinite(output).all():
             raise ValueError("Non-finite embedding")
@@ -97,10 +108,64 @@ class ClipEngine:
         return vectors
 
 
+class Siglip2Engine(ClipEngine):
+    @property
+    def identity(self) -> ModelIdentity:
+        return SIGLIP2_ID
+
+    @cached_property
+    def model(self):
+        from transformers import AutoModel, AutoProcessor
+
+        options = {
+            "revision": self.identity.revision,
+            "cache_dir": self.settings.model_cache,
+            "local_files_only": self.settings.model_offline,
+        }
+        processor = AutoProcessor.from_pretrained(self.identity.name, **options)
+        model = AutoModel.from_pretrained(self.identity.name, **options).to(self.settings.device)
+        return model.eval(), processor
+
+    def _encode(self, inputs):
+        import torch
+
+        model, processor = self.model
+        with torch.inference_mode():
+            if isinstance(inputs[0], str):
+                features = processor(text=inputs, padding="max_length", return_tensors="pt")
+                output = model.get_text_features(**features.to(self.settings.device))
+            else:
+                features = processor(images=inputs, return_tensors="pt")
+                output = model.get_image_features(**features.to(self.settings.device))
+            if not torch.is_tensor(output):
+                output = output.pooler_output
+            vectors = torch.nn.functional.normalize(output.float(), dim=-1).cpu().numpy()
+        return self._validated_vectors(vectors, len(inputs))
+
+    def encode_text(self, text: str):
+        if not text.strip():
+            raise InvalidQuery("Query must not be blank")
+        model, processor = self.model
+        max_tokens = model.config.text_config.max_position_embeddings
+        if len(processor.tokenizer(text, truncation=False)["input_ids"]) > max_tokens:
+            raise InvalidQuery("Query exceeds the pinned SigLIP 2 token budget")
+        return self._encode([text])[0]
+
+
+def create_engine(settings: Settings):
+    if settings.embedding_model == "embeddinggemma2":
+        from mediamesh_ml.gemma_embeddings import GemmaEngine
+
+        return GemmaEngine(settings)
+    if settings.embedding_model == "siglip2":
+        return Siglip2Engine(settings)
+    return ClipEngine(settings)
+
+
 if __name__ == "__main__":
     import json
 
-    engine = ClipEngine(Settings())
+    engine = create_engine(Settings())
     engine.load()
     print(
         json.dumps({"modelVersion": engine.model_version, "dimensions": engine.identity.dimensions})

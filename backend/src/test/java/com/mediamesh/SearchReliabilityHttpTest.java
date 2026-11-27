@@ -9,9 +9,11 @@ import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.micrometer.core.instrument.*;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.*;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -35,15 +37,16 @@ class SearchReliabilityHttpTest {
     static final HttpServer stub;
     static final ExecutorService handlers=Executors.newCachedThreadPool();
     static final AtomicInteger status=new AtomicInteger(200);
+    static final AtomicReference<String> responseBody=new AtomicReference<>("{\"matches\":[]}");
     static volatile CountDownLatch entered=new CountDownLatch(0),release=new CountDownLatch(0);
     static {
         try {
             stub=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);stub.setExecutor(handlers);
-            stub.createContext("/internal/search",exchange->{
+            stub.createContext("/internal/",exchange->{
                 entered.countDown();
                 try {
                     release.await(5,TimeUnit.SECONDS);
-                    byte[] body="{\"matches\":[]}".getBytes();
+                    byte[] body=responseBody.get().getBytes(StandardCharsets.UTF_8);
                     exchange.sendResponseHeaders(status.get(),body.length);
                     try(var output=exchange.getResponseBody()){output.write(body);}
                 } catch(InterruptedException e){Thread.currentThread().interrupt();}
@@ -63,6 +66,7 @@ class SearchReliabilityHttpTest {
     @MockBean AssetRepository assets;
     @BeforeEach void setup(){
         status.set(200);release=new CountDownLatch(0);entered=new CountDownLatch(0);
+        responseBody.set("{\"matches\":[]}");
         breakers.circuitBreaker("mlSearch").reset();
         var jwt=Jwt.withTokenValue("researcher").header("alg","RS256").subject("researcher").build();
         var user=new IdentityService.User(UUID.randomUUID(),"test@example.org","Test",List.of("RESEARCHER"),false);
@@ -86,6 +90,40 @@ class SearchReliabilityHttpTest {
         search().andExpect(status().isForbidden());
         assertThat(count("mediamesh.search.requests")-before).isEqualTo(1);
         assertThat(count("mediamesh.search.good")-good).isEqualTo(1);
+    }
+    @Test void searchAndRelatedApplyTheInclusiveScoreCutoff() throws Exception {
+        var video=UUID.randomUUID();
+        var image=UUID.randomUUID();
+        var weakImage=UUID.randomUUID();
+        when(assets.eligible(any())).thenReturn(List.of(video,image,weakImage));
+        var owner=UUID.randomUUID();
+        when(assets.findById(video)).thenReturn(Optional.of(new Asset(video,owner,"video",
+                MediaType.video,"Untitled clip",null,null,null,null,null,null,AssetStatus.READY)));
+        when(assets.findById(image)).thenReturn(Optional.of(new Asset(image,owner,"image",
+                MediaType.image,"Untitled photo",null,null,null,null,null,null,AssetStatus.READY)));
+        when(assets.findById(weakImage)).thenReturn(Optional.of(new Asset(weakImage,owner,"weak-image",
+                MediaType.image,"Elephants", "Elephants",null,null,null,null,null,AssetStatus.READY)));
+        responseBody.set("""
+                {"matches":[
+                    {"assetId":"%s","score":0.82,"frameTimestampSeconds":4.0},
+                    {"assetId":"%s","score":0.67},
+                    {"assetId":"%s","score":0.669}
+                ]}
+                """.formatted(video,image,weakImage));
+
+        search().andExpect(status().isOk())
+                .andExpect(jsonPath("$.results.length()").value(2))
+                .andExpect(jsonPath("$.results[0].assetId").value(video.toString()))
+                .andExpect(jsonPath("$.results[1].assetId").value(image.toString()));
+        var source=UUID.randomUUID();
+        when(assets.findById(source)).thenReturn(Optional.of(new Asset(source,owner,"source",
+                MediaType.image,"Source",null,null,null,null,null,null,AssetStatus.READY)));
+        mvc.perform(post("/api/assets/"+source+"/similar")
+                .header("Authorization","Bearer researcher"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results.length()").value(2))
+                .andExpect(jsonPath("$.results[1].assetId").value(image.toString()));
+        verify(assets,never()).findById(weakImage);
     }
     @Test void circuitRejectionsAreStructuredAndConsumeBudget() throws Exception {
         double before=count("mediamesh.search.bad");status.set(503);

@@ -345,14 +345,16 @@ summary { cursor: pointer; font-weight: 600; }
 .thumbnail-skeleton, .thumbnail-message { display: grid; place-items: center; height: 100%; font-size: 12px; color: #415642; }
 .thumbnail-skeleton { background: linear-gradient(100deg, #e6ebdf 25%, #f5f7f0 50%, #e6ebdf 75%); background-size: 200% 100%; animation: shimmer 1.6s infinite; }
 .thumbnail-retry { position: absolute; bottom: 18px; left: 18px; font-size: 11px; padding: 7px 10px; z-index: 2; }
-.result-info { padding: 20px; }
-.result-info .eyebrow { font-size: 9px; }
-.result h3 { font-size: 17px; line-height: 1.4; margin: 9px 0; min-height: 2.8em; }
+.result-info { padding: 20px; height: 290px; box-sizing: border-box; display: flex; flex-direction: column; }
+.result-info .eyebrow { font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
+.result h3 { font-size: 17px; line-height: 1.4; margin: 9px 0; height: 2.8em; flex-shrink: 0; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .result p { font-size: 12px; color: #687b6d; line-height: 1.5; }
-.result-bottom { border-top: 1px solid #edf0e8; padding-top: 13px; margin-top: 16px; }
+.result-metadata { height: 54px; flex-shrink: 0; overflow: hidden; }
+.result-metadata p { margin: 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.result-bottom { border-top: 1px solid #edf0e8; padding-top: 13px; margin-top: auto; }
 .similarity { font-size: 10px; color: #6b796b; display: block; margin-bottom: 12px; }
-.result .actions { gap: 7px; }
-.result .actions button { font-size: 11px; padding: 7px 9px; border-color: #e1e5dc; border-radius: 6px; }
+.result .actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.result .actions button { font-size: 11px; min-width: 0; padding: 7px 4px; border-color: #e1e5dc; border-radius: 6px; }
 .gallery-compact .result-info { padding: 15px; }
 .gallery-compact .result h3 { font-size: 15px; }
 .gallery-footnote { text-align: center; font-size: 11px; color: #73816e; margin: 36px 0 0; }
@@ -440,9 +442,9 @@ dialog.lightbox { width: 1200px; max-width: 95vw; max-height: 92vh; padding: 0; 
   .gallery-toolbar { align-items: start; flex-direction: column; }
   .results { grid-template-columns: 1fr; }
   .gallery-compact { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .gallery-compact .result-info { padding: 10px; }
+  .gallery-compact .result-info { padding: 10px; height: 340px; }
   .gallery-compact .result h3 { font-size: 13px; }
-  .gallery-compact .actions { flex-direction: column; align-items: stretch; }
+  .gallery-compact .actions { grid-template-columns: 1fr; }
   .media-pill { top: 8px; left: 8px; padding: 5px 8px; font-size: 9px; }
   .lightbox-layout { grid-template-columns: 1fr; }
   .lightbox-stage { min-height: 220px; }

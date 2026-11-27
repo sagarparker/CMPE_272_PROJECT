@@ -48,11 +48,13 @@ export function ResultCard({ asset, onPreview, onDownload, onRelated }) {
       </div>
       <div className="result-info">
         <span className="eyebrow">{asset.title.includes(" | ") ? asset.title.split(" | ")[0] : "From the archive"}</span>
-        <h3>{asset.title.includes(" | ") ? asset.title.split(" | ").slice(1).join(" | ") : asset.title}</h3>
+        <h3 title={asset.title}>{asset.title.includes(" | ") ? asset.title.split(" | ").slice(1).join(" | ") : asset.title}</h3>
+        <div className="result-metadata">
         {(asset.species || asset.location) && <p>{[asset.species, asset.location].filter(Boolean).join(" · ")}</p>}
         {asset.frameTimestampSeconds != null && <p>Matching moment: {asset.frameTimestampSeconds.toFixed(1)}s</p>}
+        </div>
         <div className="result-bottom">
-          <span className="similarity" title="Similarity indicates relative ranking, not confidence or accuracy.">
+          <span className="similarity" title="Search scores combine visual similarity and metadata text matching. Related scores use visual similarity. Scores indicate ranking, not confidence or accuracy.">
             {Math.round(asset.score * 100)} similarity
           </span>
           <div className="actions">
@@ -117,6 +119,10 @@ export function MediaPreview({ asset, index, total, onClose, onPrevious, onNext,
           <span className="eyebrow">{asset.mediaType === "video" ? "Motion picture" : "Photograph"}</span>
           <h3>{asset.title}</h3>
           {details?.description && <p>{details.description}</p>}
+          {details?.generatedDescription && <section aria-label="Generated visual description">
+            <h4>AI-generated visual description</h4>
+            <p>{details.generatedDescription}</p>
+          </section>}
           <dl>
             {[["Species", details?.species], ["Location", details?.location], ["Captured", details?.capturedAt],
               ["Contributor", details?.contributor]].filter(([, value]) => value).map(([label, value]) => (

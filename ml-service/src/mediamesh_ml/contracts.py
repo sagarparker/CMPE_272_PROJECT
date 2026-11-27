@@ -19,10 +19,17 @@ class ModelIdentity:
     name: str
     revision: str
     dimensions: int
+    preprocessing: str = "rgb-l2-v1"
 
 
 def embedding_version(identity: ModelIdentity) -> str:
-    return f"{identity.name}@{identity.revision}:rgb-l2-v1"
+    return f"{identity.name}@{identity.revision}:{identity.preprocessing}"
+
+
+@dataclass(frozen=True)
+class GeneratedDescription:
+    text: str
+    model: str
 
 
 @dataclass(frozen=True)
@@ -91,7 +98,8 @@ class JobStore(Protocol):
     def claim(self) -> ClaimedJob | None: ...
 
     def complete(
-        self, job: ClaimedJob, records: Sequence[VectorRecord], *, playback_key: str | None = None
+        self, job: ClaimedJob, records: Sequence[VectorRecord], *, playback_key: str | None = None,
+        generated_description: GeneratedDescription | None = None
     ) -> None:
         """Fence stale claims; commit vectors and job/asset success atomically."""
         ...

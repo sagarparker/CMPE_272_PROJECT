@@ -33,7 +33,7 @@ public class CatalogController {
         boolean owner=asset.ownerId().toString().equals(auth.getName()) && role(auth,"UPLOADER");
         if (!owner && !(role(auth,"RESEARCHER") && asset.processingStatus()==AssetStatus.READY))
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Asset access denied");
-        return AssetView.of(asset);
+        return AssetView.of(asset,assets.generatedDescription(id));
     }
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('UPLOADER')")

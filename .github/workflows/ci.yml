@@ -25,7 +25,17 @@ jobs:
       - run: ./infra/check.sh
       - name: Secret and known-exploited dependency gate
         run: ./infra/security-check.sh
-      - run: docker compose up -d --build
+      - name: Start CI smoke-test stack
+        # Hosted runners have no native Ollama GPU service. Real Gemma caption
+        # generation is exercised locally; CI covers its clients and job flow.
+        env:
+          ML_EMBEDDING_MODEL: clip
+          ML_CAPTION_ENABLED: "false"
+          ML_VERIFY_CAPTIONS: "false"
+          ML_SEARCH_MIN_SIMILARITY: "0.25"
+        run: |
+          docker compose up -d --build --wait --wait-timeout 180 postgres keycloak azurite blob-init backend frontend
+          docker compose up -d --no-deps --build ml-api ml-worker
       - run: npx playwright install --with-deps chromium
         working-directory: frontend
       - name: Wait for model and API readiness

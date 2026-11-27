@@ -11,9 +11,10 @@ dependencies = [
     "fastapi>=0.115,<1",
     "pydantic-settings>=2.7,<3",
     "uvicorn>=0.34,<1",
-    "sentence-transformers>=3.4,<6",
-    "transformers>=4.48,<5",
+    "sentence-transformers>=6.1,<7",
+    "transformers>=5.0,<6",
     "torch>=2.6,<3",
+    "torchvision>=0.21,<1",
     "pillow>=11,<13",
     "azure-identity>=1.25,<2",
     "azure-storage-blob>=12.27,<13",
@@ -42,3 +43,5 @@ explicit = true
 
 [tool.uv.sources]
 torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+torchvision = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]

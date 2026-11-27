@@ -59,8 +59,9 @@ class ApplicationSecurityTest {
     @MockBean com.mediamesh.media.MlSearchClient ml;
     @MockBean com.mediamesh.identity.KeycloakAccounts keycloak;
     @BeforeEach void reset(){
-        // V400/V401 are beyond the Flyway target used here; add its column before any plan is cached.
+        // Later catalog migrations are beyond this security fixture target.
         jdbc.execute("ALTER TABLE assets ADD COLUMN IF NOT EXISTS playback_key TEXT");
+        jdbc.execute("ALTER TABLE assets ADD COLUMN IF NOT EXISTS generated_description TEXT");
         jdbc.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ");
         jdbc.execute("TRUNCATE api_sessions,audit_events,user_roles,users,assets CASCADE");}
     @AfterAll static void close(){jwks.stop(0);}
@@ -150,7 +151,12 @@ class ApplicationSecurityTest {
         jdbc.update("UPDATE assets SET processing_status='READY' WHERE id=?",id);
         when(storage.createAccessUrl(anyString(),anyBoolean())).thenReturn("https://example.org/signed");
         when(ml.similar(anyMap())).thenReturn(new com.mediamesh.media.MlSearchClient.Matches(List.of()));
-        mvc.perform(get("/api/assets/"+id).header("Authorization","Bearer "+researcher)).andExpect(status().isOk()).andExpect(jsonPath("$.objectKey").doesNotExist()).andExpect(jsonPath("$.s3Key").doesNotExist());
+        jdbc.update("UPDATE assets SET generated_description='A tiger standing on grass.' WHERE id=?",id);
+        mvc.perform(get("/api/assets/"+id).header("Authorization","Bearer "+researcher))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.generatedDescription").value("A tiger standing on grass."))
+                .andExpect(jsonPath("$.objectKey").doesNotExist())
+                .andExpect(jsonPath("$.s3Key").doesNotExist());
         mvc.perform(post("/api/assets/"+id+"/access-url").header("Authorization","Bearer "+researcher)).andExpect(status().isOk());
         mvc.perform(post("/api/assets/"+id+"/similar").header("Authorization","Bearer "+researcher)).andExpect(status().isOk());
     }

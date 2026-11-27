@@ -126,7 +126,9 @@ def test_playback_failure_keeps_search_vectors(tmp_path):
             return nullcontext(tmp_path / "in.mov")
 
     engine = Mock()
-    engine.identity = SimpleNamespace(name="m", revision="r", dimensions=512)
+    engine.identity = SimpleNamespace(
+        name="m", revision="r", dimensions=512, preprocessing="rgb-l2-v1"
+    )
     engine.encode_images.return_value = [(1.0,) + (0.0,) * 511]
     playback = Mock()
     playback.publish.side_effect = ValueError("encoder failed")

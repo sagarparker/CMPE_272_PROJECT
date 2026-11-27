@@ -138,7 +138,7 @@ try{
       console.log(`${fixtureUser.username}: ${item.id}`);
     }
   }
-  const deadline=Date.now()+300000;
+  const deadline=Date.now()+1800000;
   let pending=[...uploaded];
   while(pending.length){
     const remaining=[];
@@ -150,6 +150,17 @@ try{
     console.log(`READY ${uploaded.length-remaining.length}/${uploaded.length}`);
     pending=remaining;
     if(pending.length){if(Date.now()>deadline) throw new Error("Indexing did not finish; rerun to resume");await new Promise(resolve=>setTimeout(resolve,2000));}
+  }
+  // READY alone is insufficient after changing models or enabling descriptions.
+  // Explicit IDs keep unrelated user uploads outside this resumable backfill.
+  execFileSync("docker",["compose","run","--rm","--no-deps","-T","ml-worker",
+    "python","-u","-m","mediamesh_ml.seed_enrich"],{
+    cwd:root,input:JSON.stringify(uploaded.map(asset=>asset.entry.assetId)),
+    stdio:["pipe","inherit","inherit"],timeout:3600000,
+  });
+  for(const asset of uploaded){
+    const current=await api(asset.user,"GET",`/assets/${asset.entry.assetId}`);
+    if(!current.generatedDescription?.trim()) throw new Error(`Missing visual description: ${asset.item.id}`);
   }
   const researcher=users.get("demo.researcher");
   for(const fixtureUser of fixture.accounts.filter(account=>account.domain)){
@@ -169,7 +180,7 @@ try{
   if(![403,404].includes(crossOwner.status())) throw new Error("Uploader ownership isolation failed");
   const deniedSearch=await plants.page.request.post(base+"/api/search",{headers:{Authorization:plants.token},data:{query:"flowers"}});
   if(deniedSearch.status()!==403) throw new Error("Uploader unexpectedly has researcher access");
-  const queries=["elephants drinking at a watering hole","yellow sunflower","ocean waves","sea turtle underwater","a puffin bird","mountain lake"];
+  const queries=["elephants drinking at a watering hole","yellow sunflower","ocean waves","sea turtle underwater","a puffin bird","a waterfall surrounded by green rainforest"];
   const searchChecks=[];
   for(const query of queries){
     const response=await api(researcher,"POST","/search",{query,limit:10});

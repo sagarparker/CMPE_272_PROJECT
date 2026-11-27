@@ -58,7 +58,7 @@ try {
     assert.equal(createHash("sha256").update(await media.body()).digest("hex"), item.sha256); report.hashesVerified++;
   }
   console.log("PASS: all 50 cloud media downloads match source SHA-256");
-  const queries = ["elephants drinking at a watering hole", "yellow sunflower", "ocean waves", "sea turtle underwater", "a puffin bird", "mountain lake"];
+  const queries = ["elephants drinking at a watering hole", "yellow sunflower", "ocean waves", "sea turtle underwater", "a puffin bird", "a waterfall surrounded by green rainforest"];
   for (const query of queries) {
     const started = performance.now();
     const result = await api(researcher, "POST", "/search", { query, limit: 10 });

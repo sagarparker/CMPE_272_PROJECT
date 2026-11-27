@@ -12,6 +12,9 @@ class Engine:
     def load(self):
         pass
 
+    def encode_document(self, text):
+        return self.encode_text(text)
+
     def encode_text(self, query):
         return (1.0,) + (0.0,) * 511
 
@@ -48,3 +51,19 @@ def test_database_outage_is_not_empty_success():
     service.initialize()
     with pytest.raises(SearchUnavailable):
         service.search("elephants", 5)
+
+
+def test_catalog_search_passes_query_and_scope_to_hybrid_ranking():
+    class HybridRepository(Repository):
+        def refresh_metadata_vectors(self, version, encode_document, asset_ids):
+            assert asset_ids == [UUID(int=1)]
+
+        def search_hybrid(self, vector, version, query, limit, asset_ids):
+            assert version == "test-model@revision:rgb-l2-v1"
+            assert query == "zebras near trees"
+            assert asset_ids == [UUID(int=1)]
+            return [Match(UUID(int=1), 0.73, None)]
+
+    service = SearchService(Engine(), HybridRepository(), hybrid_text=True)
+    service.initialize()
+    assert service.search("zebras near trees", 5, [UUID(int=1)])[0].score == 0.73

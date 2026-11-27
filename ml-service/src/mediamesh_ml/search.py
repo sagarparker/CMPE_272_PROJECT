@@ -13,9 +13,11 @@ class SearchUnavailable(RuntimeError):
 
 
 class SearchService:
-    def __init__(self, engine: EmbeddingEngine, repository):
+    def __init__(self, engine: EmbeddingEngine, repository, *, hybrid_text=False, verifier=None):
         self.engine = engine
         self.repository = repository
+        self.hybrid_text = hybrid_text
+        self.verifier = verifier
         self.model_loaded = False
         self._inference_lock = threading.Lock()
 
@@ -35,6 +37,18 @@ class SearchService:
             raise SearchUnavailable("Search dependencies are unavailable")
         with self._inference_lock:
             vector = self.engine.encode_text(query)
+            if self.hybrid_text:
+                self.repository.refresh_metadata_vectors(
+                    embedding_version(self.engine.identity), self.engine.encode_document, asset_ids
+                )
+        if self.hybrid_text:
+            matches = self.repository.search_hybrid(
+                vector, embedding_version(self.engine.identity), query, limit, asset_ids
+            )
+            if self.verifier is not None:
+                captions = self.repository.caption_evidence([m.asset_id for m in matches])
+                return self.verifier.filter(query, matches, captions)
+            return matches
         if asset_ids is None:
             return self.repository.search_assets(
                 vector, embedding_version(self.engine.identity), limit

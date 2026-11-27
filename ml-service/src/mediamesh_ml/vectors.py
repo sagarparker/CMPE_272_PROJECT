@@ -8,12 +8,12 @@ from mediamesh_ml.config import Settings
 from mediamesh_ml.contracts import Embedding, Match, VectorRecord
 from mediamesh_ml.database import connection
 
-DIMENSIONS = 512  # V300 schema; a dimension change requires a new migration.
+DIMENSIONS = 512  # Default CLIP dimensions.
 
 
-def vector_literal(embedding: Embedding) -> str:
-    if len(embedding) != DIMENSIONS or not all(math.isfinite(x) for x in embedding):
-        raise ValueError("Expected 512 finite embedding values")
+def vector_literal(embedding: Embedding, dimensions: int = DIMENSIONS) -> str:
+    if len(embedding) != dimensions or not all(math.isfinite(x) for x in embedding):
+        raise ValueError(f"Expected {dimensions} finite embedding values")
     if not math.isclose(math.sqrt(sum(x * x for x in embedding)), 1.0, abs_tol=1e-4):
         raise ValueError("Expected a unit-normalized embedding")
     return "[" + ",".join(str(float(x)) for x in embedding) + "]"
@@ -25,7 +25,9 @@ def validate_model_version(model_version: str):
 
 
 def replace_in_transaction(
-    conn, asset_id: UUID, model_version: str, records: Sequence[VectorRecord]
+    conn, asset_id: UUID, model_version: str, records: Sequence[VectorRecord],
+    *,
+    dimensions: int = DIMENSIONS,
 ):
     """Caller owns the transaction, allowing future atomic job completion."""
     validate_model_version(model_version)
@@ -40,7 +42,8 @@ def replace_in_transaction(
         if timestamp in timestamps:
             raise ValueError("Duplicate image/frame timestamp")
         timestamps.add(timestamp)
-        prepared.append((asset_id, timestamp, model_version, vector_literal(record.embedding)))
+        embedding = vector_literal(record.embedding, dimensions)
+        prepared.append((asset_id, timestamp, model_version, embedding))
     # Serialize replacements/deletes for the same asset, including initially empty sets.
     if not conn.execute("SELECT id FROM assets WHERE id=%s FOR UPDATE", (asset_id,)).fetchone():
         raise ValueError("Asset does not exist")
@@ -68,7 +71,10 @@ class PgVectorRepository:
                 "WHERE attrelid=to_regclass('public.asset_vectors') "
                 "AND attname='embedding' AND NOT attisdropped"
             ).fetchone()
-            if not row or row[0] != f"vector({DIMENSIONS})":
+            accepted_types = {"vector"}
+            if self.settings.vector_dimensions == DIMENSIONS:
+                accepted_types.add(f"vector({DIMENSIONS})")
+            if not row or row[0] not in accepted_types:
                 return False
             conn.execute(
                 "SELECT asset_id, model_version, frame_timestamp_seconds, embedding "
@@ -78,7 +84,9 @@ class PgVectorRepository:
 
     def replace(self, asset_id: UUID, model_version: str, records: Sequence[VectorRecord]) -> None:
         with connection(self.settings) as conn:
-            replace_in_transaction(conn, asset_id, model_version, records)
+            replace_in_transaction(
+                conn, asset_id, model_version, records, dimensions=self.settings.vector_dimensions
+            )
 
     def delete(self, asset_id: UUID) -> None:
         with connection(self.settings) as conn:
@@ -89,7 +97,7 @@ class PgVectorRepository:
         validate_model_version(model_version)
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1000:
             raise ValueError("Repository limit must be an integer between 1 and 1000")
-        query = vector_literal(embedding)
+        query = vector_literal(embedding, self.settings.vector_dimensions)
         with connection(self.settings) as conn:
             rows = conn.execute(
                 "SELECT asset_id, 1 - (embedding <=> %s::vector) AS score, "
@@ -108,7 +116,7 @@ class PgVectorRepository:
         validate_model_version(model_version)
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1000:
             raise ValueError("Repository limit must be an integer between 1 and 1000")
-        query = vector_literal(embedding)
+        query = vector_literal(embedding, self.settings.vector_dimensions)
         with connection(self.settings) as conn:
             rows = conn.execute(
                 "SELECT asset_id, score, frame_timestamp_seconds FROM ("
@@ -120,6 +128,83 @@ class PgVectorRepository:
                 "frame_timestamp_seconds NULLS FIRST, id) best "
                 "ORDER BY score DESC, asset_id LIMIT %s",
                 (query, model_version, asset_ids, asset_ids, query, limit),
+            ).fetchall()
+        return [Match(row[0], row[1], row[2]) for row in rows]
+
+    def caption_evidence(self, asset_ids):
+        with connection(self.settings) as conn:
+            return dict(conn.execute(
+                "SELECT id,generated_description FROM assets WHERE id=ANY(%s::uuid[]) "
+                "AND processing_status='READY'", (asset_ids,),
+            ).fetchall())
+
+    def refresh_metadata_vectors(self, model_version, encode_document, asset_ids=None):
+        """Cache document embeddings by metadata fingerprint; never reuse stale text."""
+        with connection(self.settings) as conn:
+            rows = conn.execute(
+                """
+                SELECT a.id, concat_ws(' ', a.title, a.description, a.species,
+                        a.location, a.generated_description),
+                    md5(concat_ws(' ', a.title, a.description, a.species,
+                        a.location, a.generated_description))
+                FROM assets a LEFT JOIN asset_metadata_vectors m
+                    ON m.asset_id=a.id AND m.model_version=%s
+                WHERE a.processing_status='READY'
+                    AND (%s::uuid[] IS NULL OR a.id=ANY(%s::uuid[]))
+                    AND (m.metadata_hash IS DISTINCT FROM
+                        md5(concat_ws(' ', a.title, a.description, a.species,
+                        a.location, a.generated_description)))
+                """, (model_version, asset_ids, asset_ids),
+            ).fetchall()
+        for asset_id, text, fingerprint in rows:
+            if not text.strip():
+                continue
+            vector = vector_literal(encode_document(text), self.settings.vector_dimensions)
+            with connection(self.settings) as conn:
+                # Recheck metadata so an edit during inference cannot install stale vectors.
+                conn.execute(
+                    """
+                    INSERT INTO asset_metadata_vectors
+                        (asset_id, model_version, metadata_hash, embedding)
+                    SELECT id, %s, %s, %s::vector FROM assets WHERE id=%s
+                        AND md5(concat_ws(' ', title, description, species,
+                            location, generated_description))=%s
+                    ON CONFLICT (asset_id, model_version) DO UPDATE SET
+                        metadata_hash=EXCLUDED.metadata_hash, embedding=EXCLUDED.embedding
+                    """, (model_version, fingerprint, vector, asset_id, fingerprint),
+                )
+
+    def search_hybrid(
+        self, embedding: Embedding, model_version: str, text_query: str, limit: int,
+        asset_ids=None,
+    ) -> Sequence[Match]:
+        """Fuse image and current metadata cosine scores before limiting candidates."""
+        validate_model_version(model_version)
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1000:
+            raise ValueError("Repository limit must be an integer between 1 and 1000")
+        query = vector_literal(embedding, self.settings.vector_dimensions)
+        with connection(self.settings) as conn:
+            rows = conn.execute(
+                """
+                WITH best AS (
+                    SELECT DISTINCT ON (v.asset_id) v.asset_id,
+                        1 - (v.embedding <=> %s::vector) AS image_score,
+                        v.frame_timestamp_seconds,
+                        coalesce(1 - (m.embedding <=> %s::vector), 0) AS text_score
+                    FROM public.asset_vectors v JOIN public.assets a ON a.id=v.asset_id
+                    LEFT JOIN asset_metadata_vectors m ON m.asset_id=a.id
+                        AND m.model_version=v.model_version
+                        AND m.metadata_hash=md5(concat_ws(' ',
+                            a.title, a.description, a.species, a.location, a.generated_description))
+                    WHERE v.model_version=%s AND a.processing_status='READY'
+                        AND (%s::uuid[] IS NULL OR v.asset_id=ANY(%s::uuid[]))
+                    ORDER BY v.asset_id, v.embedding <=> %s::vector,
+                        v.frame_timestamp_seconds NULLS FIRST, v.id
+                )
+                SELECT asset_id, 0.8 * image_score + 0.2 * text_score AS score,
+                    frame_timestamp_seconds FROM best
+                ORDER BY score DESC, asset_id LIMIT %s
+                """, (query, query, model_version, asset_ids, asset_ids, query, limit),
             ).fetchall()
         return [Match(row[0], row[1], row[2]) for row in rows]
 
