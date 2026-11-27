@@ -2,7 +2,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 export DOCKER_HOST="${DOCKER_HOST:-$(docker context inspect --format '{{.Endpoints.docker.Host}}')}"
-mvn -B -f backend/pom.xml -Dapi.version=1.44 verify
+sh backend/scripts/mvn-retry.sh -f backend/pom.xml -Dapi.version=1.44 verify
 npm --prefix frontend ci
 npm --prefix frontend test
 npm --prefix frontend run build

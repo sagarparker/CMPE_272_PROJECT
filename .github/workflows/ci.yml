@@ -9,6 +9,8 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    env:
+      COMPOSE_FILE: compose.yaml:infra/compose.ci.yaml
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4

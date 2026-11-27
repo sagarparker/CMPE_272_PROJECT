@@ -1,0 +1,5 @@
+# Reuse the artifact produced by infra/check.sh for image scans and smoke tests.
+services:
+  backend:
+    build:
+      target: verified
