@@ -15,11 +15,8 @@ Start Docker Desktop, then run:
 ./infra/start.sh
 ```
 
-Open **http://localhost:8080**. First start downloads the pinned CLIP model;
-watch `docker compose logs -f ml-api ml-worker` until it loads. Docker Compose
-starts PostgreSQL/pgvector, Keycloak, the Azurite Blob emulator, Spring Boot, the ML API,
-the indexing worker, and the React portal. Only the portal and local Blob port
-are bound to localhost; Python has no host-facing port.
+Open **http://localhost:8080**. First start downloads the pinned CLIP model.
+Watch `./infra/manage.sh logs ml-api ml-worker` until it loads.
 
 Local demo accounts: `admin`, `uploader`, `researcher`, `employee`; all use
 `local-demo-only`. These are public local fixtures. Only `admin` gets a role
@@ -33,15 +30,46 @@ plants, oceans, marine life, birds and landscapes, with a dedicated uploader for
 each and a separate researcher. See the [demo accounts, setup and walkthrough](infra/demo/README.md)
 and [media attribution](ml-service/evaluation/DEMO_ATTRIBUTION.md).
 
-See [the runbook](infra/README.md) for testing, Azure deployment, and stopping
-the stack. Read [the implementation walkthrough](docs/IMPLEMENTATION.md) to
-learn how the checkpoints fit together, and [the API contract](docs/contracts/README.md)
+See [the runbook](infra/README.md) for testing and Azure deployment.
+Read [the implementation walkthrough](docs/IMPLEMENTATION.md)
+to learn how the checkpoints fit together, and [the API contract](docs/contracts/README.md)
 for routes and JSON examples. The historical team assignments below describe
 workstream scope; Mathew now owns all workstreams.
 
 The [course slide checklist](docs/COURSE_CHECKLIST.md) maps each security and
 reliability requirement to implementation, tests, presentation evidence, and
 account-owner steps that still need verification.
+
+### Local Compose services
+
+Use the service names below with `./infra/manage.sh`.
+
+| Service | Component | When it runs |
+| --- | --- | --- |
+| `frontend` | React portal at `http://localhost:8080`, including the `/auth` proxy to Keycloak | Default stack |
+| `backend` | Spring Boot API for the media catalog, access control, and search | Default stack |
+| `postgres` | PostgreSQL with pgvector for catalog metadata, jobs, and embeddings | Default stack |
+| `keycloak` | Local identity provider for sign-in and account provisioning | Default stack |
+| `azurite` | Azure Blob Storage emulator at `http://localhost:10000` | Default stack |
+| `blob-init` | Configures the Blob container and CORS before the backend starts | One-time startup job |
+| `ml-api` | FastAPI service for semantic search and model inference | Default stack |
+| `ml-worker` | Background worker that indexes uploaded images and videos | Default stack |
+| `prometheus` | Metrics and alert rules at `http://localhost:9090` | Default stack |
+| `postgres-test` | Isolated PostgreSQL with pgvector for integration tests | `test` profile |
+| `ml-tests` | Python lint and test runner | `test` profile |
+
+```bash
+./infra/manage.sh start ml-worker
+./infra/manage.sh stop ml-worker
+./infra/manage.sh restart ml-worker
+./infra/manage.sh logs ml-worker
+./infra/manage.sh status
+```
+
+Starting a service also starts its required dependencies. Stopping a service
+keeps its container, logs, and data volumes. Run `./infra/manage.sh stop` to
+stop the stack or `./infra/manage.sh help` for all commands. The `test`
+profile is used by `./infra/check.sh`.
 
 ## Reliability and observability
 

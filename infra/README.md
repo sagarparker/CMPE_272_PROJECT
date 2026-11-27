@@ -11,8 +11,8 @@ allow several GB for images/model cache. From the repository root:
 
 Open http://localhost:8080. First start needs network access for images and
 the pinned Hugging Face CLIP model. Later starts reuse the `model-cache`
-volume. Follow readiness with `docker compose logs -f ml-api ml-worker` or
-`docker compose ps` (the ML API reports healthy only after model/schema load).
+volume. Follow readiness with `./infra/manage.sh logs ml-api ml-worker` or
+`./infra/manage.sh status` (the ML API reports healthy only after model/schema load).
 
 Keycloak imports the development realm and four local accounts. Password for
 `admin`, `uploader`, `researcher`, and `employee`: `local-demo-only`. The
@@ -73,15 +73,32 @@ switch; its old volume and an ignored export remain as recovery copies. See
 [the migration notes](../docs/AZURE_BLOB_MIGRATION.md) before upgrading an older
 checkout that still has objects only in S3.
 
-## Stop and inspect
+## Manage the local stack
 
 ```bash
-docker compose logs backend ml-api ml-worker
-docker compose down
+./infra/manage.sh stop
+./infra/manage.sh restart
+./infra/manage.sh restart --with-ui
+./infra/manage.sh restart --without-ui
+./infra/manage.sh status
+./infra/manage.sh logs
+./infra/manage.sh logs ml-worker
+./infra/manage.sh logs frontend
+./infra/manage.sh help
 ```
 
-`down` preserves database, identity, storage, and model volumes. To delete all
-local demo data deliberately, use `docker compose --profile test down -v`.
+`./infra/start.sh` starts the full stack and also accepts the management
+commands above. The integrated React portal runs as `frontend` and is enabled
+by default. Both `start` and `restart` accept `--without-ui` to run the other
+services without the portal. Pass a service name to `start`, `stop`, or
+`restart` to manage it individually, for example `./infra/manage.sh restart ml-worker`.
+See the [local Compose service list](../README.md#local-compose-services) for
+all service names and their roles.
+
+`stop` keeps containers available for `status` and `logs` and preserves all
+data volumes. To remove containers and the Compose network while retaining
+volumes, run `docker compose down`. To delete all local demo data deliberately,
+use `docker compose --profile test down -v`.
 Never point destructive test fixtures at an application database. The original
 standalone ML environment remains available under `ml-service/compose.yaml`.
 
