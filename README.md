@@ -77,43 +77,54 @@ zero traffic does not imply 100% availability. No real paging receiver exists.
 
 ```mermaid
 flowchart TB
-    STAFF["NatGeo editorial staff"]
-    WEB["React editorial portal"]
-    IDP["OIDC identity provider"]
-    API["Spring Boot API - JWT, RBAC, catalog"]
-    PG[("PostgreSQL and pgvector")]
+    STAFF["NatGeo editorial staff (browser)"]
     BLOB[("Private Azure Blob container")]
-    ML["Python semantic search service"]
-    WORK["Python media indexing worker"]
+    subgraph VM["Azure VM - Docker Compose, one container per service"]
+        EDGE["Caddy HTTPS gateway"]
+        WEB["React portal (nginx)"]
+        IDP["Keycloak SSO - password + authenticator"]
+        API["Spring Boot API - JWT, RBAC, catalog, audit"]
+        ML["Python search service (ml-api)"]
+        WORK["Python indexing worker (ml-worker)"]
+        PG[("PostgreSQL and pgvector")]
+        PROM["Prometheus"]
+    end
 
-    STAFF --> WEB
-    WEB -->|Sign in| IDP
-    IDP -->|OIDC tokens| WEB
-    WEB -->|Authenticated HTTPS API requests| API
+    STAFF -->|HTTPS| EDGE
+    EDGE -->|Sign-in pages| IDP
+    EDGE --> WEB
+    WEB -->|/api requests with access JWT| API
+    API -->|Verify tokens, create and delete accounts| IDP
+    IDP -->|Identity data| PG
     API -->|Read and write records| PG
-    API -->|Request semantic search| ML
-    ML -->|Search embeddings| PG
-    API -->|Return presigned URL| WEB
-    WEB -->|Upload or retrieve media| BLOB
-    WORK -->|Claim indexing jobs| PG
-    WORK -->|Read media| BLOB
-    WORK -->|Generate embeddings| ML
-    WORK -->|Persist vectors and status| PG
+    API -->|Semantic search| ML
+    ML -->|CLIP text vector, pgvector ranking| PG
+    API -->|Return short-lived SAS URL| WEB
+    STAFF -->|Upload or preview media with SAS| BLOB
+    WORK -->|Claim jobs, store vectors and status| PG
+    WORK -->|Read original, write video playback copy| BLOB
+    API -->|Sign SAS, verify uploads| BLOB
+    PROM -->|Scrape search metrics| API
 ```
 
-**Security boundary:** The browser never accesses internal Python endpoints directly. The backend validates JWTs and verifies current role assignments for each protected action. Media objects are private. Signed URLs are scoped and short-lived; role revocation cannot invalidate an already-issued URL before it expires.
+The indexing worker runs CLIP in its own process; it does not call the search
+service. The backend and worker reach Blob Storage with the VM's managed
+identity, so no storage key exists. See the [component diagram](docs/architecture/mediamesh-architecture.png)
+and the [detailed deployment reference](docs/architecture/azure-deployment-architecture.html).
+
+**Security boundary:** Only the Caddy gateway is public (ports 80/443); Keycloak's admin console, metrics, the database and the Python services are not reachable from the internet. The browser never accesses internal Python endpoints directly. The backend validates JWTs and verifies current role assignments for each protected action. Media objects are private. SAS URLs are scoped and short-lived (15-minute create-only upload, 60-second read); role revocation cannot invalidate an already-issued URL before it expires.
 
 ## User roles
 
 | Action | ADMIN | UPLOADER | RESEARCHER | Signed-in unassigned |
 |---|:---:|:---:|:---:|:---:|
-| Assign or revoke roles | Yes | No | No | No |
+| Create accounts, assign roles, delete users | Yes (administrator accounts: primary admin only) | No | No | No |
 | Upload photos/video | Only with UPLOADER role | Yes | No | No |
 | Edit own asset metadata | Only with UPLOADER role | Yes | No | No |
 | Search media | Only with RESEARCHER role | No | Yes | No |
 | Preview / download | Only with RESEARCHER role | No | Yes | No |
 
-Roles can be combined. On first SSO login, an employee is provisioned without application roles. The team must configure a controlled first-admin bootstrap process.
+Roles can be combined. There is no self-registration: an administrator creates each account with one role and a one-time temporary password; the first sign-in forces a new password and authenticator (TOTP) enrollment. The configured bootstrap subject is the primary administrator; only it can create, grant, remove or delete administrators. See [account setup](docs/ACCOUNT_SETUP.md).
 
 ## Core workflows
 
@@ -123,35 +134,41 @@ Roles can be combined. On first SSO login, an employee is provisioned without ap
 sequenceDiagram
     actor Employee
     participant UI as React Portal
-    participant IdP as OIDC Provider
+    participant IdP as Keycloak
     participant API as Spring Boot
     participant DB as PostgreSQL
     Employee->>UI: Open MediaMesh
     UI->>IdP: OIDC Authorization Code + PKCE
+    IdP->>Employee: Password + authenticator code
     IdP-->>UI: Authenticated session / tokens
     UI->>API: GET /api/me with access JWT
     API->>API: Validate signature, issuer, audience, expiry
-    API->>DB: Find/provision user, read assigned roles
+    API->>DB: Match (issuer, subject) to the admin-created user, read roles
     DB-->>API: Current roles
     API-->>UI: User profile + roles
     Note over UI,API: Expired/invalid access token returns 401, renew or reauthenticate
 ```
 
-### 2. Admin assigns access
+### 2. Admin creates accounts and assigns access
 
 ```mermaid
 sequenceDiagram
     actor Admin
     participant UI as React Portal
     participant API as Spring Boot
+    participant IdP as Keycloak
     participant DB as PostgreSQL
-    Admin->>UI: Select employee and roles
-    UI->>API: PUT admin roles endpoint
-    API->>API: Verify JWT + current ADMIN role
-    API->>DB: Replace roles and append audit event
-    DB-->>API: Committed assignments
-    API-->>UI: Updated roles
-    Note over API,DB: Revocation applies to the next API authorization check
+    Admin->>UI: Create account (username, email, role)
+    UI->>API: POST /api/admin/users
+    API->>API: Verify JWT + ADMIN (ADMIN role: primary admin only)
+    API->>IdP: Create user, temporary password, require password change + TOTP
+    API->>DB: Record user, role and audit event
+    API-->>UI: Temporary password, shown once
+    Admin->>UI: Change roles or delete a user
+    UI->>API: PUT roles / DELETE user
+    API->>DB: Replace roles or remove roles and sessions, audit
+    API->>IdP: Delete login (user deletion only)
+    Note over API,DB: Changes apply to the next API authorization check
 ```
 
 ### 3. Uploader adds wildlife footage
@@ -177,6 +194,7 @@ sequenceDiagram
     Worker->>DB: Claim pending job
     Worker->>BLOB: Read image/video
     Worker->>Worker: CLIP image / sampled frame embeddings
+    Worker->>BLOB: Videos: write browser-safe H.264 playback copy
     Worker->>DB: Store vectors, set READY
 ```
 
@@ -213,6 +231,7 @@ sequenceDiagram
     UI->>API: POST asset access URL endpoint
     API->>API: Validate JWT and RESEARCHER role
     API->>DB: Ensure asset exists and is READY
+    Note over API: Video previews use the H.264 playback copy, downloads use the original
     API-->>UI: Short-lived Blob SAS URL
     UI->>BLOB: GET media using presigned URL
     BLOB-->>UI: Photo/video preview
@@ -224,14 +243,16 @@ sequenceDiagram
 |---|---|---|
 | Web UI | React | Role-aware editorial portal |
 | Enterprise API | Java / Spring Boot / Spring Security | JWT and RBAC enforcement, asset catalog, orchestration |
-| SSO | OIDC provider (to finalize) | Keycloak for local testing or enterprise OIDC-compatible IdP |
+| SSO | Keycloak 26 (OIDC, Authorization Code + PKCE) | Password + authenticator (TOTP); admin-created accounts only |
+| Gateway | Caddy (deployment), nginx (portal) | HTTPS with Let's Encrypt; only ports 80/443 public |
 | Media storage | Azure Blob Storage | Private container; create-only upload SAS and read-only preview/download SAS |
 | Structured database | PostgreSQL | Users, roles, assets, indexing jobs, audit events |
 | Vector database | pgvector | Vectors in the existing PostgreSQL database |
 | ML retrieval | Python / FastAPI, Pydantic, Uvicorn, Sentence Transformers / CLIP | Standalone multimodal embedding and semantic retrieval service |
-| Video indexing | FFmpeg | Sample keyframes, report approximate matching timestamp |
-| Local development | Docker Compose | Service reproducibility, not production orchestration |
-| CI | Jenkins + GitHub | Build, unit and integration tests |
+| Video indexing | FFmpeg | Sample keyframes, report approximate matching timestamp; write H.264 playback copy |
+| Monitoring | Prometheus | Search SLI, error budget and burn-rate rules |
+| Deployment | Docker Compose on one Azure VM | `compose.deploy.yaml`; `compose.yaml` for local runs; single VM, not highly available |
+| CI | Jenkins + GitHub Actions | Build, unit and integration tests |
 
 ## Repo organization
 
@@ -239,6 +260,7 @@ sequenceDiagram
 Media-Mesh/
 ├── README.md
 ├── docs/
+│   ├── architecture/           # Component diagram and deployment reference
 │   ├── design/                 # NatGeo stakeholder architecture and design background
 │   ├── team/                   # Shared plan plus four individual task assignments
 │   └── contracts/              # Contract freeze and integration guidance
@@ -246,7 +268,10 @@ Media-Mesh/
 ├── ml-service/                 # Teammate 3: embedding, indexing and retrieval
 ├── frontend/                   # Teammate 4: React portal
 ├── infra/                      # Teammate 4: local/deployment definitions
-└── Jenkinsfile                 # Added when CI is implemented
+├── compose.yaml                # Local stack (Azurite, Keycloak dev realm)
+├── compose.deploy.yaml         # Azure VM deployment
+├── .github/workflows/          # GitHub Actions CI
+└── Jenkinsfile                 # Jenkins pipeline
 ```
 
 **The source directories now contain the integrated implementation.** Original team documents remain as design and ownership history; use the runbook and current API contract for executable instructions.
@@ -284,7 +309,9 @@ Start with the [shared team overview and API contracts](docs/team/00_TEAM_OVERVI
 
 - Keycloak OIDC with Authorization Code + PKCE; JWT signature, issuer, audience
   and timestamp checks; current roles loaded from PostgreSQL on every request.
-- Public local demo identities; one explicit bootstrap admin subject. API
+- Public local demo identities; one explicit bootstrap (primary) admin subject.
+  In the cloud, accounts are created by an admin with a temporary password and
+  mandatory TOTP enrollment. API
   sessions enforce 30-minute idle and 8-hour absolute limits; logout revokes
   the local session and ends the provider session. Access JWTs last 15 minutes.
 - Azure VM + private Blob Storage for cloud deployment; Azurite Blob Storage is the local demo fixture.
@@ -301,10 +328,6 @@ Start with the [shared team overview and API contracts](docs/team/00_TEAM_OVERVI
 Never commit secrets, JWTs, OAuth credentials, Azure credentials/storage keys, private media objects, user records or trained model/data caches. Use environment variables and example configuration only. Upload rights notes are not a substitute for formal media licensing checks.
 
 See [Azure Blob migration checkpoints](docs/AZURE_BLOB_MIGRATION.md) for the storage implementation and preservation of existing demo media.
-
-![MediaMesh Azure architecture](docs/architecture/mediamesh-architecture.png)
-
-See the [detailed deployment reference](docs/architecture/azure-deployment-architecture.html) for every container, network path and Azure resource in the live deployment.
 
 See [account setup](docs/ACCOUNT_SETUP.md) for creating researcher, uploader and administrator logins and the first sign-in steps.
 
