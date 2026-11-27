@@ -27,9 +27,10 @@ for component in backend frontend; do
     --output "/reports/$component.json" --timeout 10m
   rm "security-reports/$component-image.tar"
 done
-python3 -c 'import json; from pathlib import Path; p=Path("security-reports/trivy.json"); d=json.loads(p.read_text()); [d["Results"].extend(json.loads(Path("security-reports",name+".json").read_text())["Results"]) for name in ("backend","frontend")]; p.write_text(json.dumps(d))'
+# Scanner output is root-owned on Linux runners, so merge into a new file instead of overwriting it.
+python3 -c 'import json; from pathlib import Path; d=json.loads(Path("security-reports/trivy.json").read_text()); [d["Results"].extend(json.loads(Path("security-reports",name+".json").read_text())["Results"]) for name in ("backend","frontend")]; Path("security-reports/combined.json").write_text(json.dumps(d))'
 curl --fail --silent --show-error --location --connect-timeout 5 --max-time 45 \
   https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json \
   --output security-reports/cisa-kev.json
 python3 -m unittest discover -s infra/security -p 'test_*.py'
-python3 infra/security/gate.py security-reports/trivy.json security-reports/cisa-kev.json
+python3 infra/security/gate.py security-reports/combined.json security-reports/cisa-kev.json
