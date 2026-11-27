@@ -105,11 +105,15 @@ or an official NatGeo collection. Review source terms before publication.
 
 ### Caption generation prerequisites
 
-`./infra/seed-demo.sh` starts/rebuilds the local stack and enables captioning.
-The Compose initializer installs `qwen3-vl:2b-instruct` in the Ollama volume if
-needed. The seed script checks image support before seeding.
-For a different Ollama service, set `ML_CAPTION_URL` and `ML_CAPTION_MODEL`.
-A missing caption service or incomplete generation fails the seed run explicitly.
+Set `ML_OPENROUTER_API_KEY` in the ignored root `.env`, then run
+`./infra/seed-demo.sh`. It starts/rebuilds the stack and enables captioning with
+`google/gemma-4-26b-a4b-it`. The preflight validates the key and model's image
+and structured-output capabilities without generating a paid completion.
+No local caption model is installed. Hosted captions and search checks consume
+OpenRouter credit; all image/query/metadata embeddings stay on EmbeddingGemma 2.
+
+A missing key, unavailable hosted model or incomplete generation fails the seed
+explicitly. The existing queue handles temporary provider failures with retries.
 
 Fresh uploads generate descriptions during asynchronous processing. Existing
 READY fixture assets receive any missing descriptions and current image/frame

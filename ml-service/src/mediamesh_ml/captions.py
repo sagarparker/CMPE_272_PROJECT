@@ -1,14 +1,13 @@
-"""Local visual descriptions, generated once during asynchronous upload processing."""
+"""Visual descriptions, generated once during asynchronous upload processing."""
 
 import base64
 import io
-import json
 from collections.abc import Sequence
 from pathlib import Path
-from urllib.request import Request, urlopen
 
 from mediamesh_ml.contracts import GeneratedDescription
 from mediamesh_ml.images import prepare_image
+from mediamesh_ml.openrouter import complete
 
 PROMPT = """Describe only what is visibly supported by the supplied image(s).
 Write a factual description of 2-4 sentences for an image search catalog.
@@ -35,22 +34,9 @@ class VisualDescriber:
                 image.thumbnail((768, 768))
                 image.save(buffer, format="JPEG", quality=85)
                 images.append(base64.b64encode(buffer.getvalue()).decode("ascii"))
-        payload = {
-            "model": self.settings.caption_model,
-            "messages": [{"role": "user", "content": PROMPT, "images": images}],
-            "stream": False,
-            "think": False,
-            "keep_alive": "5m",
-            "options": {"num_ctx": 4096, "num_predict": 220, "temperature": 0},
-        }
-        request = Request(
-            self.settings.caption_url.rstrip("/") + "/api/chat",
-            data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"},
-        )
-        with urlopen(request, timeout=self.settings.caption_timeout_seconds) as response:
-            result = json.load(response)
-        text = result.get("message", {}).get("content", "").strip()
-        if not result.get("done") or not text or len(text) > 2000:
+        text = complete(self.settings, PROMPT, images=images, max_tokens=220,
+                        timeout=self.settings.caption_timeout_seconds).strip()
+        if not text or len(text) > 2000:
             raise RuntimeError("Caption model returned an incomplete or invalid description")
         return GeneratedDescription(text, self.settings.caption_model)
 

@@ -37,7 +37,7 @@ npm run test:e2e
 
 The test uses the four public local demo accounts and synthetic image/video
 fixtures. It grants and removes roles, creates test catalog records, and
-requires the real CLIP model to be ready. It targets localhost by default;
+requires the embedding service to be ready (CI can select the CLIP baseline). It targets localhost by default;
 `APP_URL` can select another isolated demo instance.
 
 ## Shared theme and sign-in illustration
@@ -54,3 +54,22 @@ select **Realm settings → Themes → Login theme → mediamesh**; importing a 
 again does not update an existing realm. The theme loads its shared assets from
 the frontend at the same origin, so deploy the frontend build with the theme.
 Keycloak continues to handle credentials, password updates, and MFA.
+
+
+## Search behavior
+
+The browser sends natural-language queries and optional metadata filters to
+Spring Boot, never directly to the ML service or OpenRouter. Explore buttons
+send short topic phrases. Comma-separated examples use “or” so a single result
+does not need every listed subject. The gallery currently requests up to 20
+results; this is not a category listing of every object in storage.
+
+The displayed similarity comes from the integrated backend's
+`80% query-to-image/frame cosine + 20% query-to-metadata-text cosine` score.
+It is not accuracy or probability. OpenRouter can exclude candidates after
+ranking, so the returned count may be smaller than the requested limit. Videos
+show the best sampled frame timestamp. The [root README](../README.md#system-architecture)
+contains the component and sequence Mermaid diagrams.
+
+The OpenRouter credential stays in server-side environment configuration. Vite
+never receives it. The browser's Keycloak access token is a separate credential.

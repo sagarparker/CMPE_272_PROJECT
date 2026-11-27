@@ -9,15 +9,17 @@ MediaMesh is a secure, searchable media library for editorial teams. A wildlife 
 
 ## Run the integrated application
 
-Start Docker Desktop, then run:
+Start Docker Desktop. Copy `.env.example` to `.env` if it does not exist, then
+set `ML_OPENROUTER_API_KEY` in that ignored file. Captions and search verification
+use the paid `google/gemma-4-26b-a4b-it` model; embeddings stay local. Then run:
 
 ```bash
 ./infra/start.sh
 ```
 
-Open **http://localhost:8080**. First start downloads EmbeddingGemma 2 and the
-Ollama caption model into Docker volumes. Track model setup with
-`./infra/manage.sh logs gemma-embed ollama-init`.
+Open **http://localhost:8080**. First start downloads EmbeddingGemma 2 into its
+Docker volume. Captions and verification use OpenRouter, so no local vision-model
+download is needed. Track readiness with `./infra/manage.sh logs gemma-embed ml-api ml-worker`.
 
 Local demo accounts: `admin`, `uploader`, `researcher`, `employee`; all use
 `local-demo-only`. These are public local fixtures. Only `admin` gets a role
@@ -54,8 +56,6 @@ Use the service names below with `./infra/manage.sh`.
 | `azurite` | Azure Blob Storage emulator at `http://localhost:10000` | Default stack |
 | `blob-init` | Configures the Blob container and CORS before the backend starts | One-time startup job |
 | `gemma-embed` | EmbeddingGemma 2 text and image encoders | Default stack |
-| `ollama` | Vision captions and query-to-caption verification | Default stack |
-| `ollama-init` | Installs the configured Ollama model if it is missing | One-time startup job |
 | `ml-api` | FastAPI service for semantic search and model inference | Default stack |
 | `ml-worker` | Background worker that indexes uploaded images and videos | Default stack |
 | `prometheus` | Metrics and alert rules at `http://localhost:9090` | Default stack |
@@ -98,7 +98,7 @@ zero traffic does not imply 100% availability. No real paging receiver exists.
 | Admin-controlled RBAC | `ADMIN`, `UPLOADER`, `RESEARCHER` roles; role changes checked against current DB assignments |
 | Media catalog | Photo and short video uploads; editorial metadata; processing states |
 | Media storage | Private Azure Blob container for deployment; short-lived SAS upload/access links; Azurite locally |
-| Natural-language discovery | CLIP text/image embedding similarity; video search using sampled keyframes |
+| Natural-language discovery | EmbeddingGemma 2 visual/text embeddings; 80/20 cosine ranking; OpenRouter caption verification |
 | Vector retrieval | PostgreSQL + pgvector; authorized, ready assets only |
 | Recommendation | Basic related-media suggestions from vector similarity (no behavioral personalization) |
 | Delivery | React frontend, Spring Boot API, Python ML service, Docker Compose, Jenkins CI |
@@ -107,42 +107,34 @@ zero traffic does not imply 100% availability. No real paging receiver exists.
 
 ## System architecture
 
+The diagrams below describe the current integrated stack (`compose.yaml`).
+The [architecture guide](docs/architecture/README.md) explains the components,
+scoring and deployment differences in more detail.
+
 ```mermaid
 flowchart TB
-    STAFF["NatGeo editorial staff (browser)"]
-    BLOB[("Private Azure Blob container")]
-    subgraph VM["Azure VM - Docker Compose, one container per service"]
-        EDGE["Caddy HTTPS gateway"]
-        WEB["React portal (nginx)"]
-        IDP["Keycloak SSO - password + authenticator"]
-        API["Spring Boot API - JWT, RBAC, catalog, audit"]
-        ML["Python search service (ml-api)"]
-        WORK["Python indexing worker (ml-worker)"]
-        PG[("PostgreSQL and pgvector")]
-        PROM["Prometheus"]
-    end
-
-    STAFF -->|HTTPS| EDGE
-    EDGE -->|Sign-in pages| IDP
-    EDGE --> WEB
-    WEB -->|/api requests with access JWT| API
-    API -->|Verify tokens, create and delete accounts| IDP
-    IDP -->|Identity data| PG
-    API -->|Read and write records| PG
-    API -->|Semantic search| ML
-    ML -->|CLIP text vector, pgvector ranking| PG
-    API -->|Return short-lived SAS URL| WEB
-    STAFF -->|Upload or preview media with SAS| BLOB
-    WORK -->|Claim jobs, store vectors and status| PG
-    WORK -->|Read original, write video playback copy| BLOB
-    API -->|Sign SAS, verify uploads| BLOB
-    PROM -->|Scrape search metrics| API
+    Browser["Browser: upload, search, preview"] --> Web["React + nginx; Caddy HTTPS on Azure"]
+    Web -->|JWT-protected API| API["Spring Boot: RBAC, catalog, jobs, SAS"]
+    Web -->|OIDC code + PKCE| SSO["Keycloak"]
+    API --> PG[("PostgreSQL + pgvector")]
+    API --> Search["ML API: query + metadata embeddings, retrieval"]
+    Worker["ML worker: images, sampled frames, captions"] -->|Claim jobs / save vectors + READY| PG
+    Worker -->|Read originals / write playback copy| Blob[("Azure Blob; Azurite locally")]
+    Browser -->|Direct upload / preview with short-lived SAS| Blob
+    API -->|Issue SAS / verify object| Blob
+    Search -->|Query + document text| Gemma["Shared EmbeddingGemma 2 service: 768-dimensional vectors"]
+    Worker -->|Image / frame pixels| Gemma
+    Search -->|80% visual + 20% metadata cosine score| PG
+    Worker -->|Bounded images / sampled frames| Router["OpenRouter: Gemma 4 captions"]
+    Search -->|Query + saved captions; batch accept/reject| Router
 ```
 
-The indexing worker runs CLIP in its own process; it does not call the search
-service. The backend and worker reach Blob Storage with the VM's managed
-identity, so no storage key exists. See the [component diagram](docs/architecture/mediamesh-architecture.png)
-and the [detailed deployment reference](docs/architecture/azure-deployment-architecture.html).
+This describes **`compose.yaml`**, the current integrated stack. The separate
+[Azure deployment reference](docs/architecture/azure-deployment-architecture.html)
+tracks `compose.deploy.yaml`, which still defaults to CLIP and does not yet wire
+in the shared EmbeddingGemma service or hybrid verification. Deploying that file
+unchanged does **not** reproduce the local hybrid search path. See the
+[deployment gap](infra/deploy/README.md#search-parity-with-the-integrated-stack).
 
 **Security boundary:** Only the Caddy gateway is public (ports 80/443); Keycloak's admin console, metrics, the database and the Python services are not reachable from the internet. The browser never accesses internal Python endpoints directly. The backend validates JWTs and verifies current role assignments for each protected action. Media objects are private. SAS URLs are scoped and short-lived (15-minute create-only upload, 60-second read); role revocation cannot invalidate an already-issued URL before it expires.
 
@@ -213,6 +205,8 @@ sequenceDiagram
     participant BLOB as Private Azure Blob Container
     participant DB as PostgreSQL
     participant Worker as Python Indexer
+    participant Embed as EmbeddingGemma 2
+    participant Router as OpenRouter Gemma 4
     Uploader->>UI: Select file, enter species/location/rights notes
     UI->>API: POST /api/assets/initiate (JWT)
     API->>API: Require UPLOADER
@@ -225,9 +219,12 @@ sequenceDiagram
     API-->>UI: 202 PROCESSING
     Worker->>DB: Claim pending job
     Worker->>BLOB: Read image/video
-    Worker->>Worker: CLIP image / sampled frame embeddings
+    Worker->>Embed: Image pixels / sampled video frames
+    Embed-->>Worker: Visual vectors (one per image/frame)
+    Worker->>Router: Generate a description from bounded image(s)
+    Router-->>Worker: Saved visual description
     Worker->>BLOB: Videos: write browser-safe H.264 playback copy
-    Worker->>DB: Store vectors, set READY
+    Worker->>DB: Atomically store vectors + caption + model, set READY
 ```
 
 ### 4. Researcher searches by natural language
@@ -238,17 +235,67 @@ sequenceDiagram
     participant UI as React Portal
     participant API as Spring Boot
     participant ML as Python Search
-    participant DB as PostgreSQL
-    Researcher->>UI: Search "elephants at a watering hole"
-    UI->>API: POST /api/search with access JWT
+    participant Embed as EmbeddingGemma 2
+    participant DB as PostgreSQL + pgvector
+    participant Router as OpenRouter Gemma 4
+    Researcher->>UI: Enter a natural-language query or Explore phrase
+    UI->>API: POST /api/search with JWT and optional metadata filters
     API->>API: Require RESEARCHER
-    API->>ML: Embed query and retrieve candidate asset IDs
-    ML->>DB: pgvector similarity lookup
-    DB-->>ML: Ranked IDs and video timestamps
-    ML-->>API: Candidate matches
-    API->>DB: Filter READY assets + metadata constraints
-    API-->>UI: Authorized results with title, metadata and score
+    API->>DB: Find eligible READY asset IDs
+    API->>ML: Query, result limit, eligible IDs
+    ML->>Embed: Encode query and missing/changed metadata text
+    ML->>DB: Refresh outdated metadata vectors and compare visual/text vectors
+    DB-->>ML: Top assets ranked by 0.8 * visual + 0.2 * metadata cosine
+    ML->>Router: Verify query against saved captions above the score cutoff
+    Router-->>ML: Supported candidate indexes (cached per query/caption)
+    ML-->>API: Accepted IDs, original scores, best-frame timestamps
+    API->>DB: Recheck READY and attach display metadata
+    API-->>UI: Results - media access uses a separate signed URL request
 ```
+
+### What the 80/20 score means
+
+There are **two comparisons with the same query vector**. The first compares the
+query with image pixels (or the best sampled video frame); the second compares
+it with an embedding of the asset's title, authored description, species,
+location and generated visual description. Both are cosine similarities:
+
+```text
+visual_score   = cosine(query_vector, image_vector)
+                 or max cosine over the video's sampled frame vectors
+metadata_score = cosine(query_vector, metadata_text_vector)
+search_score   = 0.80 × visual_score + 0.20 × metadata_score
+```
+
+```mermaid
+flowchart LR
+    Q["Query embedding"] --> V["Visual cosine similarity"]
+    Q --> T["Metadata cosine similarity"]
+    I["Image vector / best sampled frame"] --> V
+    M["Title + authored text + generated caption vector"] --> T
+    V -->|80% weight| S["Combined similarity score"]
+    T -->|20% weight| S
+    S -->|Score at least 0.67| F["OpenRouter checks query against saved captions"]
+    F --> R["Accepted results keep their scores and order"]
+```
+
+For example, visual similarity 0.80 and metadata similarity 0.60 produce 0.76.
+The UI may show this as 76 similarity; it is **not a probability or accuracy
+percentage**. The integrated default cutoff is 0.67. The database uses cosine
+distance (`<=>`); the application converts it with `similarity = 1 - distance`.
+These are vector comparisons, not an 80%/20% split of the uploaded file.
+
+OpenRouter then filters the shortlist using saved captions. It does not inspect
+the original files again during this check, recompute embeddings, or modify the
+scores. A missing detail in a caption can hide a valid match. Broad Explore
+phrases use alternatives such as “ocean scenes, waves, or coastlines”; precise
+queries still require the requested subject, action, color and setting.
+
+Metadata vectors are cached with a fingerprint of their source text. Before
+search, the ML API generates missing vectors and refreshes those whose text has
+changed. Editing a title therefore refreshes its text vector without re-embedding
+the image. New visual vectors are generated during upload processing; search
+reuses them. The first search after metadata changes can do additional work.
 
 ### 5. Authorized preview/download
 
@@ -280,7 +327,8 @@ sequenceDiagram
 | Media storage | Azure Blob Storage | Private container; create-only upload SAS and read-only preview/download SAS |
 | Structured database | PostgreSQL | Users, roles, assets, indexing jobs, audit events |
 | Vector database | pgvector | Vectors in the existing PostgreSQL database |
-| ML retrieval | Python / FastAPI, Pydantic, Uvicorn, Sentence Transformers / CLIP | Standalone multimodal embedding and semantic retrieval service |
+| ML retrieval | Python / FastAPI + shared EmbeddingGemma 2 | 768-dimensional visual/query/document vectors; hybrid retrieval |
+| Captioning and verification | OpenRouter Gemma 4 26B A4B | Hosted image descriptions and batch query-to-caption checking |
 | Video indexing | FFmpeg | Sample keyframes, report approximate matching timestamp; write H.264 playback copy |
 | Monitoring | Prometheus | Search SLI, error budget and burn-rate rules |
 | Deployment | Docker Compose on one Azure VM | `compose.deploy.yaml`; `compose.yaml` for local runs; single VM, not highly available |
@@ -314,7 +362,7 @@ Media-Mesh/
 |---|---|---|
 | Sonit | Enterprise identity, JWT, RBAC, admin APIs, audit | [Identity & RBAC](docs/team/01_PERSON_1_IDENTITY_RBAC.md) |
 | Mathew | Media catalog, metadata APIs, S3, indexing job lifecycle | [Media Backend & S3](docs/team/02_PERSON_2_MEDIA_S3_BACKEND.md) |
-| Sagar | CLIP embeddings, retrieval, video keyframes, pgvector integration | [ML & Search](docs/team/03_PERSON_3_ML_RETRIEVAL.md) |
+| Sagar | EmbeddingGemma 2, hybrid retrieval, video keyframes, pgvector integration | [ML & Search](docs/team/03_PERSON_3_ML_RETRIEVAL.md) |
 | Joel | React portal, local orchestration, Jenkins, integration demo | [Frontend & DevOps](docs/team/04_PERSON_4_FRONTEND_DEVOPS.md) |
 
 Start with the [shared team overview and API contracts](docs/team/00_TEAM_OVERVIEW.md). Shared interface changes require a PR review before modifying another person's owned code.
@@ -344,13 +392,17 @@ Start with the [shared team overview and API contracts](docs/team/00_TEAM_OVERVI
 - Public local demo identities; one explicit bootstrap (primary) admin subject.
   In the cloud, accounts are created by an admin with a temporary password and
   mandatory TOTP enrollment. API
-  sessions enforce 30-minute idle and 8-hour absolute limits; logout revokes
-  the local session and ends the provider session. Access JWTs last 15 minutes.
+  sessions enforce 30-minute request-inactivity and 8-hour absolute limits;
+  periodic `/me` polling counts as request activity. A separate frontend timer
+  logs out after human inactivity. Logout revokes the local session and ends
+  the provider session. Access JWTs last 15 minutes.
 - Azure VM + private Blob Storage for cloud deployment; Azurite Blob Storage is the local demo fixture.
 - JPEG, PNG, MP4 and QuickTime; 100 MB maximum at completion and 180-second
   video duration during indexing. PUT URLs expire in 15 minutes; GET in 60 seconds.
-- Frozen CLIP model revision and 512-dimensional normalized vectors. Workers
-  invoke shared Python indexing functions directly; no embed-media HTTP endpoint.
+- Pinned EmbeddingGemma 2 model revision and 768-dimensional normalized vectors
+  in the integrated stack; CLIP remains in standalone/deployment profiles.
+  Workers invoke shared indexing functions and the private embedding service;
+  no public embed-media endpoint exists.
 - Related media uses one reference frame for videos. Search filters are applied
   to READY catalog IDs before similarity ranking. Exact search targets the small
   MVP catalog; large archives need database-side filtered vector indexing.

@@ -89,7 +89,7 @@ Metadata vectors are cached by model version and a fingerprint of current text;
 stale text vectors are excluded and refreshed on search. Empty metadata contributes
 zero. For video, the image component uses the best matching sampled frame.
 
-The local Gemma API additionally checks up to 20 shortlisted candidates against
+The integrated API uses OpenRouter to check up to 20 shortlisted candidates against
 their generated visual descriptions, rejecting unsupported query requirements.
 Verification results are cached by query and caption. A failed verification
 dependency returns 503 instead of silently returning unchecked candidates.
@@ -111,8 +111,10 @@ move filtered ranking into a database query rather than sending large sets.
 
 The worker invokes shared `IndexingService.prepare_image/prepare_video`
 functions directly. This is the agreed co-located embedding handoff; no
-`/internal/embed-media` HTTP route is needed. Real CLIP weights/revision,
-512-dimensional normalization, and timestamp validation remain unchanged.
+`/internal/embed-media` HTTP route is needed. The integrated stack calls the
+shared EmbeddingGemma 2 service for 768-dimensional vectors; the standalone
+CLIP profile retains 512-dimensional vectors. The versioned representations
+are not interchangeable. Timestamp validation remains part of video indexing.
 
 Flyway creates `users`, `user_roles`, `audit_events`, `api_sessions` (V100),
 `assets` and `index_jobs` (V200/V201), and `asset_vectors` (V300). Production
@@ -142,5 +144,4 @@ owner/researcher authorization as other metadata. Editable `description` remains
 user-supplied; generated text is not accepted from metadata-edit requests.
 Captions and vectors are committed with READY only by the current lease owner.
 The text embedding fingerprint includes generatedDescription, so a new caption
-invalidates any older cached metadata vector. Local generation uses the
-configured Ollama vision model. Transient failures use upload retries.
+invalidates any older cached metadata vector. Generation uses the configured OpenRouter vision model. Transient failures use upload retries.

@@ -1,17 +1,90 @@
 # MediaMesh ML service
 
-A local, Docker-based service for turning wildlife photographs and sampled video
-frames into searchable CLIP embeddings. It provides background indexing,
-PostgreSQL/pgvector persistence, and an internal FastAPI semantic-search API.
+The integrated application uses **EmbeddingGemma 2** for local visual and text
+embeddings, **OpenRouter Gemma 4 26B A4B** for captions and final batch checks,
+and PostgreSQL/pgvector for persistence and ranking. The worker processes uploads
+in the background; FastAPI serves private retrieval endpoints behind Spring Boot.
 
-**Implemented:** steps 1–7, including image/video indexing, a leased worker,
-retry handling, best-frame ranking, and the original search response contract.
-**Future:** similar-media recommendations, production Spring Boot job/status and
-private-Blob integration, shared CI/orchestration, and deployment acceptance.
+## Integrated application: start here
 
-The current application runs locally. ML-only mode starts **PostgreSQL, the ML
-API, and the worker**. The dummy frontend is optional. The current queue adapter
-still uses guarded local fixtures; ML-only mode is not a production deployment.
+From the repository root, configure `ML_OPENROUTER_API_KEY` in ignored `.env`, then:
+
+```bash
+./infra/manage.sh start
+# Optional: upload/resume the pinned demo library and verify its index.
+./infra/seed-demo.sh
+```
+
+Use [the root README](../README.md#system-architecture) for the current Mermaid
+component and sequence diagrams, [the architecture guide](../docs/architecture/README.md)
+for the complete flow, and [MODEL.md](MODEL.md) for model configuration and limits.
+Hosted captions require network access and credit; query/image/document embedding
+inference stays local. No local caption-model runtime is needed.
+
+### Upload, index, search
+
+1. Spring Boot authorizes an upload and issues a signed Blob URL. The browser
+   sends bytes directly to storage and completes the upload through the API.
+2. The API marks PROCESSING and creates a leased job. The worker downloads the
+   image/video; FFmpeg extracts bounded frames for videos.
+3. The shared embedding service produces one visual vector per image/frame.
+   OpenRouter generates a visual description from an image or up to three frames.
+4. The worker saves visual vectors, model identity and caption with READY in one
+   fenced transaction. It also attempts a browser-compatible video playback copy.
+5. Search refreshes missing/outdated metadata vectors, embeds the query, and
+   retrieves eligible READY media with an 80/20 cosine combination.
+6. OpenRouter filters the shortlisted captions against the query. Spring Boot
+   attaches metadata; a separate authorized request returns a media access SAS.
+
+### The two cosine scores
+
+```text
+V = cosine(query embedding, image embedding)
+    or the highest cosine over a video's sampled frame embeddings
+T = cosine(query embedding, metadata-text embedding)
+S = 0.80 * V + 0.20 * T
+```
+
+Metadata text combines title, authored description, species, location and generated
+caption. It is not the image itself. A fingerprint detects metadata edits; search
+refreshes the cached text vector without recomputing the image vector. Model
+versions separate incompatible embeddings. The integrated vectors have 768
+components; related-image search uses visual similarity only.
+
+For example, `V=0.80` and `T=0.60` give `S=0.76`. Similarity is not confidence.
+The integrated cutoff is 0.67. A candidate below it is hidden before caption
+verification. The hosted checker returns supported indexes and preserves the
+remaining score/order; it contributes no additional score and sees no pixels
+at query time. Missing caption details and model mistakes can reduce recall.
+
+### Where work and data live
+
+- Blob Storage (Azurite locally): original media and video playback copies.
+- PostgreSQL: catalog, jobs, captions, image/frame vectors and cached text vectors.
+- `gemma-embed`: one shared EmbeddingGemma 2 model instance, with cached weights.
+- OpenRouter: hosted description/verification calls; only the ML API/worker get
+  the key. Bounded media samples leave the host for captioning.
+- Browser: OIDC session/token handling and UI; it never calls internal ML APIs
+  or receives the OpenRouter key.
+
+The seed retains existing generated descriptions. Changing the caption model
+does not regenerate old captions or visual embeddings. Re-running it resumes
+uploads and backfills missing representations for the explicit demo IDs.
+
+### Deployment profiles
+
+Root `compose.yaml` is the integrated Gemma/OpenRouter stack. The independent
+Azure manifest currently still uses CLIP for embeddings and visual-only retrieval;
+it requires the documented [parity work](../infra/deploy/README.md#search-parity-with-the-integrated-stack)
+before its search behavior matches this section. This README does not claim
+that a live Azure deployment has been updated.
+
+## Standalone ML development reference
+
+**The sections below describe `ml-service/compose.yaml`, a separate CLIP baseline
+and isolated developer console. They do not describe the root integrated stack.**
+Its local-fixture queue is intentional; the root stack already implements the
+production catalog/Blob job adapters, shared orchestration and related search.
 
 ## Contents
 
@@ -25,7 +98,7 @@ still uses guarded local fixtures; ML-only mode is not a production deployment.
 - [API contract](#api-contract)
 - [Configuration and storage](#configuration-and-storage)
 - [Testing and evaluation](#testing-and-evaluation)
-- [Future integrated architecture](#future-integrated-architecture)
+- [Integrated application reference](#integrated-application-reference)
 - [Troubleshooting](#troubleshooting)
 - [Code map and related documents](#code-map-and-related-documents)
 
@@ -68,8 +141,8 @@ Startup performs these steps:
 
 The bootstrap containers exit after their commands. They use the runtime image
 with a read-only mount of the local SQL fixtures, not a persistent testing service.
-The worker needs that local job adapter until the production backend contract is
-integrated. It does not use the dummy frontend to perform indexing.
+This standalone command intentionally uses its local-fixture job adapter;
+the root application uses the integrated catalog/Blob adapters. It does not use the dummy frontend to perform indexing.
 
 ### Opt in to the test frontend
 
@@ -720,46 +793,14 @@ ranking; difficult examples and misses are retained. See [MODEL.md](MODEL.md),
 [image baseline](evaluation/baseline.json), and
 [video baseline](evaluation/video-baseline.json) for measured results and limits.
 
-## Future integrated architecture
+## Integrated application reference
 
-Dashed connections below are planned integration, not functionality provided by
-the dummy frontend or the local fixture schema.
-
-```mermaid
-flowchart LR
-    subgraph Future["Future team integration"]
-        React["Production React portal"]
-        Spring["Spring Boot<br/>JWT / RBAC / catalog / public APIs"]
-        BLOB[("Private Azure Blob media")]
-    end
-    subgraph ML["Reusable ML components"]
-        API["Internal ML API"]
-        Worker["Indexing worker<br/>Production adapters pending"]
-        DB[("PostgreSQL + pgvector")]
-    end
-    React -.-> Spring
-    Spring -.-> API
-    Spring -.-> DB
-    Spring -.-> BLOB
-    React -.-> BLOB
-    Worker -.-> BLOB
-    API --> DB
-    Worker --> DB
-```
-
-The intended integrated upload path is Spring Boot authorization → scoped Blob
-upload → upload completion/job creation → worker Blob retrieval → embedding/index →
-READY. Search flows React → Spring Boot authorization → internal ML retrieval →
-Spring metadata/status filtering and enrichment → authorized preview/download.
-The React-to-Blob connection represents a backend-issued, scoped presigned URL.
-
-Production Blob retrieval, teammate 2's job/status adapter and UUID FK agreement,
-the embed-media handoff, and shared orchestration/CI remain integration work.
-Step 8 adds `/internal/similar` through existing embeddings/ranking. Step 9
-completes integration, performance/deployment validation, and operational setup.
-Docker images, environment configuration, explicit migrations, and component
-interfaces support that work; the local console/fixtures should not be deployed
-as the production public application.
+The integrated React/Spring/Blob application is implemented in the root stack;
+it is not future integration work. Use the current
+[Mermaid diagrams](../README.md#system-architecture),
+[architecture explanation](../docs/architecture/README.md) and
+[contracts](../docs/contracts/README.md). The standalone fixture schema and
+dummy frontend in this document remain isolated development tools.
 
 ## Troubleshooting
 

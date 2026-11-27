@@ -94,19 +94,28 @@ migration is retained for Flyway checksum compatibility.
 
 ## Visual descriptions on upload
 
-New uploads in the integrated local stack are described once by Ollama using
-`qwen3-vl:2b-instruct`. Docker Compose starts Ollama and installs the model in
-the persistent `ollama-models` volume:
+New uploads in the integrated stack are described once by OpenRouter using
+`google/gemma-4-26b-a4b-it`. Store `ML_OPENROUTER_API_KEY` in the ignored root
+`.env` (permissions 0600); the key is passed only to the ML API/worker, never the
+frontend. The app sends bounded JPEGs (up to 768 pixels per edge), or up to three
+sampled video frames, to the hosted model. EmbeddingGemma 2 remains local.
 
 ```bash
 ./infra/manage.sh start
+./infra/seed-demo.sh
 ```
 
-The worker and search API connect to `http://ollama:11434` over the Compose
-network. Set `ML_CAPTION_MODEL` to select another vision model or
-`ML_CAPTION_URL` to use another Ollama endpoint. Set `ML_CAPTION_ENABLED=false`
-to disable caption generation. On Apple Silicon, Docker Desktop runs Ollama on
-the CPU. A host Ollama endpoint can use Metal.
+The seed checks credentials/model capabilities before uploads, using unbilled
+metadata requests. Captions have a 220-token output limit, and batch verification
+has a 160-token limit. Provider routing caps are `ML_OPENROUTER_MAX_INPUT_PRICE`
+(default $0.20/M tokens) and `ML_OPENROUTER_MAX_OUTPUT_PRICE` ($0.75/M tokens).
+A provider above these caps is not selected; insufficient capacity/budget returns
+an error rather than switching to a more expensive model or silently bypassing
+verification. The worker's existing job retry policy handles temporary failures.
+
+Set `ML_CAPTION_ENABLED=false` to disable caption generation independently of
+search verification. Hosted generation is the only caption/verification backend;
+no local vision-model service or model download is required.
 
 Generation occurs during asynchronous PROCESSING, with lease renewal. A temporary
 caption failure follows the upload job's existing retry policy. A successful
@@ -138,7 +147,7 @@ files are reported individually. Use `--asset-id UUID` to target one asset.
 ## Query-to-caption verification
 
 The integrated local API verifies text-search candidates against their generated
-visual descriptions using the configured Ollama model. Candidates must first meet the 0.67
+visual descriptions using the configured caption provider/model. Candidates must first meet the 0.67
 hybrid cutoff. Up to 20 candidates are checked in a bounded batch; missing visual
 evidence and unsupported subject/action/setting requirements are excluded. This
 checks saved caption evidence, not image pixels, and is not a perfect scene
@@ -150,8 +159,8 @@ unchecked candidates are never substituted. The local Compose stack gives
 verification 30 seconds (`ML_VERIFICATION_TIMEOUT_SECONDS`) and the backend
 40 seconds for the full ML request (`ML_REQUEST_TIMEOUT`). Cold CPU model loading
 and uncached verification add latency. `ML_VERIFY_CAPTIONS=false` disables the
-additional check. Caption generation and verification share `ML_CAPTION_URL` and
-`ML_CAPTION_MODEL`. Normal image/text embedding weights remain 80/20.
+additional check. Caption generation and verification share `ML_CAPTION_MODEL` and
+`ML_OPENROUTER_API_KEY`. Normal image/text embedding weights remain 80/20.
 
 
 Verification normalizes query casing and whitespace before decisions and cache
@@ -163,7 +172,7 @@ This guard can hide a truly colored subject if its caption omits that color.
 
 
 The GitHub Actions browser smoke test explicitly uses CLIP with captions and
-verification disabled to skip real Ollama inference on hosted runners.
+verification disabled to skip external inference on hosted runners.
 Python/database tests cover caption jobs and scoped backfills with
 controlled inference responses. The complete seed and actual local Gemma
 image/caption/text generation have been validated separately on Apple Silicon.

@@ -5,7 +5,8 @@ import re
 import threading
 import unicodedata
 from collections import OrderedDict
-from urllib.request import Request, urlopen
+
+from mediamesh_ml.openrouter import complete
 
 INSTRUCTION = """Select the visual descriptions that support ALL explicit requirements
 in the search query. Matching the subject alone is insufficient. Check the
@@ -79,26 +80,13 @@ class CaptionVerifier:
         if unknown:
             evidence = [{"index": i, "description": captions[m.asset_id][:1200]}
                         for i, m in enumerate(unknown)]
-            payload = {
-                "model": self.settings.caption_model,
-                "messages": [{"role": "user", "content": INSTRUCTION + "\n" + json.dumps({
-                    "query": query, "candidates": evidence,
-                })}],
-                "format": {"type": "object", "properties": {"supported": {
-                    "type": "array", "items": {"type": "integer"},
-                }}, "required": ["supported"], "additionalProperties": False},
-                "stream": False, "think": False, "keep_alive": "5m",
-                "options": {"num_ctx": 8192, "num_predict": 160, "temperature": 0},
-            }
-            request = Request(
-                self.settings.caption_url.rstrip("/") + "/api/chat",
-                data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"},
-            )
-            with urlopen(request, timeout=self.settings.verification_timeout_seconds) as response:
-                result = json.load(response)
-            if not result.get("done"):
-                raise RuntimeError("Search verification incomplete")
-            supported = json.loads(result["message"]["content"]).get("supported")
+            prompt = INSTRUCTION + "\n" + json.dumps({"query": query, "candidates": evidence})
+            schema = {"type": "object", "properties": {"supported": {
+                "type": "array", "items": {"type": "integer"},
+            }}, "required": ["supported"], "additionalProperties": False}
+            text = complete(self.settings, prompt, schema=schema, max_tokens=160,
+                            timeout=self.settings.verification_timeout_seconds)
+            supported = json.loads(text).get("supported")
             if not isinstance(supported, list) or any(
                 type(i) is not int or not 0 <= i < len(unknown) for i in supported
             ) or len(set(supported)) != len(supported):

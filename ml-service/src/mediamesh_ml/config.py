@@ -27,9 +27,12 @@ class Settings(BaseSettings):
     search_min_similarity: float = Field(default=0.67, ge=-1, le=1)
     verify_captions: bool = False
     verification_timeout_seconds: int = Field(default=6, ge=1, le=30)
+    openrouter_api_key: SecretStr = SecretStr("")
+    # USD per million tokens; avoid accidental routing to expensive providers.
+    openrouter_max_input_price: float = Field(default=0.2, gt=0)
+    openrouter_max_output_price: float = Field(default=0.75, gt=0)
     caption_enabled: bool = False
-    caption_url: str = "http://host.docker.internal:11434"
-    caption_model: str = "gemma4:e2b-it-q4_K_M"
+    caption_model: str = "google/gemma-4-26b-a4b-it"
     caption_timeout_seconds: int = Field(default=180, ge=1, le=600)
     model_name: str = Field(default="sentence-transformers/clip-ViT-B-32", min_length=1)
     model_revision: str = "327ab6726d33c0e22f920c83f2ff9e4bd38ca37f"
@@ -58,6 +61,9 @@ class Settings(BaseSettings):
         return 768 if self.embedding_model == "siglip2" else self.embedding_dimensions
 
     def model_post_init(self, __context: object) -> None:
+        if ((self.caption_enabled or self.verify_captions)
+                and not self.openrouter_api_key.get_secret_value().strip()):
+            raise ValueError("Set ML_OPENROUTER_API_KEY for hosted captions/verification")
         # Validate without including credentials in a validation error or repr.
         try:
             PostgresDsn(self.database_url.get_secret_value())

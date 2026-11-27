@@ -99,6 +99,8 @@ python3 infra/deploy/prepare.py \
   --admin-email owner@your-domain.org \
   --account YOURLOWERCASESTORAGEACCOUNT \
   --container mediamesh
+# Before starting, add ML_OPENROUTER_API_KEY to the private runtime/deploy.env.
+# Keep the key out of source control and do not print resolved Compose config.
 ./infra/deploy/compose.sh config --quiet
 ./infra/deploy/compose.sh up -d --build
 ./infra/deploy/compose.sh ps
@@ -245,3 +247,22 @@ References: [Student credit terms](https://learn.microsoft.com/azure/education-h
 [Python managed identity](https://learn.microsoft.com/azure/developer/python/sdk/authentication-azure-hosted-apps).
 
 For the curated collection, follow [the demo transfer runbook](../../docs/AZURE_DEMO_DATA_TRANSFER.md). Its explicit cloud importer uses private credentials; the localhost seeder remains restricted to Azurite.
+
+
+## Search parity with the integrated stack
+
+This standalone manifest still defaults to CLIP, with separate model instances
+in the API and worker. OpenRouter caption settings are available for new uploads,
+but `gemma-embed`, `ML_EMBEDDING_MODEL=embeddinggemma2` and hybrid verification are
+not wired in here. The default backend ML deadline is also 1.5 seconds. The root
+stack's 80/20 hybrid search and hosted final check must not be assumed on Azure.
+
+Before deploying the current local search behavior, add the shared embedding
+service and matching model configuration, enable verification, align deadlines,
+reindex the deployed catalog with the new embedding version, refresh metadata
+vectors and validate search/caption/Blob access against the real host. Do not mix
+CLIP vectors with Gemma query vectors. Credentials belong in private
+`runtime/deploy.env`; copy neither root `.env` nor demo credentials into source.
+See the [current Mermaid diagrams](../../README.md#system-architecture) and
+[architecture guide](../../docs/architecture/README.md). This documentation change
+does not claim those infrastructure/migration steps have been performed.

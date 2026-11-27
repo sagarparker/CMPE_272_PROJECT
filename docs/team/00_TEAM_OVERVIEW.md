@@ -7,7 +7,7 @@ A NatGeo photographer/archive assistant uploads wildlife photos and short docume
 
 **MVP yes:** OIDC SSO, short-lived access JWT, DB-backed admin-managed RBAC, private S3 media, PostgreSQL/pgvector, CLIP image/video-keyframe retrieval, basic similar-media suggestions, React UI, Docker Compose, CI, basic retryable indexing and audit records.
 
-**MVP no:** custom distributed storage, Kafka/SQS, Kubernetes, LLM/Ollama/MCP agent, native audio embeddings, full rights clearance, complex collection-level ACLs, multiple organizations or production-grade disaster recovery. Audio is out of semantic search scope in this MVP.
+**MVP no:** custom distributed storage, Kafka/SQS, Kubernetes, LLM/MCP agent, native audio embeddings, full rights clearance, complex collection-level ACLs, multiple organizations or production-grade disaster recovery. Audio is out of semantic search scope in this MVP.
 
 ## Ownership — no overlapping source-code areas
 

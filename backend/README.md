@@ -62,3 +62,24 @@ media type. `InitiateAssetResponse.uploadHeaders` carries Azure's BlockBlob head
 See the [Azure runbook](../infra/deploy/README.md) for identity role scopes, CORS
 and the required live-cloud validation. `s3_key` remains a historical DB column
 name holding provider-neutral object keys, not a public URL.
+
+
+## Search and indexing responsibilities
+
+The API authorizes uploads and atomically records an indexing job with PROCESSING
+when a verified upload completes. Python performs inference asynchronously; the
+browser connection is not required for the job to finish. Originals live in Blob
+Storage, not in PostgreSQL.
+
+For search, the backend checks RESEARCHER and sends only eligible READY IDs,
+query and result limit to the internal ML API. The integrated ranking is
+`0.80 × visual cosine + 0.20 × metadata-text cosine`. Video uses its best sampled
+frame. OpenRouter checks saved captions after ranking; it does not generate the
+embedding or change the numeric score. The backend rechecks READY, applies the
+configured cutoff and attaches display metadata. Preview/download use a separate
+permission check and short-lived SAS request.
+
+The OpenRouter key belongs only to ML services. It is not a Spring or browser
+credential. The [root Mermaid diagrams](../README.md#system-architecture) and
+[architecture guide](../docs/architecture/README.md) cover the complete path and
+the differences between integrated and Azure deployment profiles.

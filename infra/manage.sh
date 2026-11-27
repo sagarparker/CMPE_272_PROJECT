@@ -15,7 +15,7 @@ Usage: ./infra/manage.sh COMMAND
   help                             Show this help
 
 The integrated UI service is frontend. Other services include backend, ml-api,
-ml-worker, gemma-embed, ollama, postgres, keycloak, azurite, blob-init, and prometheus.
+ml-worker, gemma-embed, postgres, keycloak, azurite, blob-init, and prometheus.
 USAGE
 }
 
@@ -83,7 +83,7 @@ EOF
     compose up -d --build
     printf '\nMediaMesh: http://localhost:8080\n'
   fi
-  printf 'Follow model setup: ./infra/manage.sh logs gemma-embed ollama-init\n'
+  printf 'Follow model setup: ./infra/manage.sh logs gemma-embed ml-api ml-worker\n'
 }
 
 case "$command_name" in

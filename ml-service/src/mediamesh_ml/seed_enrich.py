@@ -3,13 +3,13 @@
 import argparse
 import json
 import sys
-from urllib.request import Request, urlopen
 from uuid import UUID
 
 from mediamesh_ml.captions import backfill as caption_backfill
 from mediamesh_ml.config import Settings
 from mediamesh_ml.database import connection
 from mediamesh_ml.embeddings import create_engine
+from mediamesh_ml.openrouter import check_model
 from mediamesh_ml.reindex import backfill as embedding_backfill
 
 
@@ -56,16 +56,8 @@ def main():
     args = parser.parse_args()
     settings = Settings()
     if args.check_model:
-        request = Request(
-            settings.caption_url.rstrip("/") + "/api/show",
-            data=json.dumps({"model": settings.caption_model}).encode(),
-            headers={"Content-Type": "application/json"},
-        )
-        with urlopen(request, timeout=15) as response:
-            model = json.load(response)
-        if "vision" not in model.get("capabilities", []):
-            raise ValueError("The configured caption model must support images")
-        print("Local visual-description model is ready")
+        check_model(settings)
+        print("OpenRouter visual-description model is ready (no generation charge)")
     else:
         enrich(settings, json.load(sys.stdin))
 

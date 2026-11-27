@@ -3,16 +3,17 @@
 ## Start
 
 Install Docker Desktop/Compose. Allocate at least 8 GB of Docker memory and
-allow several GB for images/model cache. From the repository root:
+allow several GB for images/model cache. Configure `ML_OPENROUTER_API_KEY` in
+the ignored root `.env` (see `.env.example`) before starting. From the repository root:
 
 ```bash
 ./infra/start.sh
 ```
 
-Open http://localhost:8080. First start downloads Docker images, EmbeddingGemma 2
-and the Ollama caption model. Later starts reuse the `model-cache` and
-`ollama-models` volumes. Follow readiness with
-`./infra/manage.sh logs gemma-embed ollama-init ml-api ml-worker` or
+Open http://localhost:8080. First start downloads Docker images and EmbeddingGemma 2.
+Captions and batch verification use OpenRouter's paid Gemma model. Embeddings
+remain local; later starts reuse `model-cache`. Follow readiness with
+`./infra/manage.sh logs gemma-embed ml-api ml-worker` or
 `./infra/manage.sh status` (the ML API reports healthy only after model/schema load).
 
 Keycloak imports the development realm and four local accounts. Password for
@@ -106,3 +107,19 @@ standalone ML environment remains available under `ml-service/compose.yaml`.
 The local stack uses Azurite; cloud deployment uses **Azure VM + Blob Storage**.
 Use the [Azure deployment runbook](deploy/README.md) and standalone
 `compose.deploy.yaml` rather than exposing the local fixtures publicly.
+
+
+## What startup and seeding do
+
+Startup initializes services, schema and local login fixtures. It does not upload
+the 50 demo files. Seeding downloads/verifies those files, provisions/reuses demo
+accounts, uploads/resumes media, waits for background processing and checks the
+current index. Existing captions are preserved. Normal stop/restart keeps
+Postgres, blob and embedding-model volumes.
+
+The root stack uses local EmbeddingGemma 2 and hosted OpenRouter captions and
+batch verification. The [architecture guide](../docs/architecture/README.md)
+explains the 80/20 cosine split, metadata refresh and cache behavior. The separate
+cloud manifest still needs the documented search parity work; use its own runbook.
+Never print resolved Compose configuration containing credentials; validate with
+`docker compose config --quiet`. Keep `.env` and deployment runtime files private.

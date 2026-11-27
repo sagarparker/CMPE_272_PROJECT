@@ -34,6 +34,17 @@
 <p class="sub">Production deployment from <code>compose.deploy.yaml</code> on one Azure VM, with private Azure Blob Storage.
 Site: <code>https://mediamesh-demo-bf5064f9.swedencentral.cloudapp.azure.com</code>. The numbered arrows are explained in the table below the diagram.</p>
 
+<aside class="card">
+<strong>Profile-specific reference, not the current hybrid-search diagram.</strong>
+<p>The current architecture is documented with Mermaid directly in
+<a href="../../README.md#system-architecture">the root README</a> and explained in
+<a href="README.md">the architecture guide</a>. The standalone Azure manifest still
+uses CLIP, without the shared EmbeddingGemma 2 service or hybrid verification.
+Its worker now supports hosted OpenRouter captions, an external dependency not
+shown in this older infrastructure illustration. No live cloud deployment has
+been verified by this documentation update.</p>
+</aside>
+
 <svg viewBox="0 0 1600 1170" role="img" aria-label="MediaMesh Azure deployment diagram">
   <defs>
     <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#243b53"/></marker>
@@ -201,7 +212,7 @@ Site: <code>https://mediamesh-demo-bf5064f9.swedencentral.cloudapp.azure.com</co
   <text x="834" y="1056" class="s">169.254.169.254, reachable only from the VM</text>
   <text x="834" y="1074" class="s">Gives backend, ml-api and ml-worker short-lived</text>
   <text x="834" y="1090" class="s">Entra tokens for the VM's managed identity.</text>
-  <text x="834" y="1110" class="xs">No storage key or client secret is stored anywhere.</text>
+  <text x="834" y="1110" class="xs">No Blob account key is needed; application secrets stay private.</text>
 
   <!-- ============ Azure PaaS on the right ============ -->
   <rect x="1250" y="90" width="315" height="330" rx="10" fill="#fff" stroke="#0a66c2" stroke-width="1.5"/>

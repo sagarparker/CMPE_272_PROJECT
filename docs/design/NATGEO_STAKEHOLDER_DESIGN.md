@@ -31,7 +31,7 @@ The goal is **minimum implementation effort**, not a custom distributed storage 
 | Federated OIDC SSO and JWT-protected API | Building a custom identity provider |
 | Admin-managed Uploader/Researcher roles | Complex organization-wide IAM workflows |
 | Private S3 uploads, previews and downloads | Custom distributed file replication |
-| Image semantic search with CLIP-compatible text/image embeddings | LLM agents, Ollama, MCP workflow orchestration |
+| Image semantic search with CLIP-compatible text/image embeddings | LLM agents and MCP workflow orchestration |
 | Video search through selected keyframes and timestamps | Native temporal video-understanding model |
 | Asset metadata, status and access rules in PostgreSQL | Multi-tenant SaaS and elaborate per-asset ACL policy engine |
 | Content-similarity recommendation (“Related media”) | Personalized collaborative filtering |

@@ -292,9 +292,12 @@ function Research() {
     } catch (e) { if (id === request.current) setError(e.message); }
     finally { if (id === request.current) setBusy(false); }
   }
-  const topics = [["Wildlife", "elephants in the savanna"], ["Botanical", "flowers and plants"],
-    ["Oceans", "ocean waves"], ["Marine life", "sea turtle underwater"],
-    ["Birds", "birds in flight"], ["Landscapes", "mountains and valleys"]];
+  const topics = [["Wildlife", "wild animals in natural settings"],
+    ["Botanical", "plants, flowers, or other vegetation"],
+    ["Oceans", "ocean scenes, waves, or coastlines"],
+    ["Marine life", "marine animals or underwater life"],
+    ["Birds", "birds in natural settings"],
+    ["Landscapes", "natural landscapes or scenic views"]];
   return (
     <section className="research-workspace">
       <div className="discovery-heading workspace-banner">
