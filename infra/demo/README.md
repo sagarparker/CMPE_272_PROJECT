@@ -1,9 +1,9 @@
 # Nature showcase dataset
 
-The local demo has **48 photographs and two short wildlife videos** across six
-domains. Photos come from Wikimedia Commons; videos come from the US National
-Park Service. Each asset retains its actual creator, source and license. Demo
-uploaders represent archive contributors, rather than claiming authorship.
+The local demo has **500 photographs and two short wildlife videos** across six
+domains. Photos come from Wikimedia Commons, with 452 additions selected from
+its featured photography galleries. Videos come from the US National Park
+Service. Each asset retains its actual creator, source and license.
 
 ## Run and populate
 
@@ -17,18 +17,19 @@ nvm use 24 # if you manage Node with nvm
 
 The script downloads checksum-pinned media, installs the existing frontend test
 dependencies and Chromium, provisions local identities, and uploads through the
-authenticated API and signed Blob SAS URLs. First run needs network access; allow
-several minutes for downloads and model startup. Open **http://localhost:8080**
-after it reports `READY 50/50` and completes verification.
+authenticated API and signed Blob SAS URLs. The first run needs network access.
+Download and indexing time depend on the network, the local embedding model and
+the hosted caption provider. Open **http://localhost:8080** after the script
+reports `READY 502/502` and completes verification.
 
 | Username | Role | Preloaded collection |
 |---|---|---|
-| `demo.wildlife` | UPLOADER | 8 wildlife photos + bison and grizzly videos |
-| `demo.plants` | UPLOADER | 8 photos: flowers, fern, trees, succulent |
-| `demo.oceans` | UPLOADER | 8 photos: waves, beaches, coasts, sea ice, mangroves |
-| `demo.marine` | UPLOADER | 8 photos: turtle, reef fish, coral, jellyfish, dolphin, whale, octopus, shark |
-| `demo.birds` | UPLOADER | 8 photos: puffin, eagle, hummingbird, birds in flight |
-| `demo.landscapes` | UPLOADER | 8 photos: mountains, streams, desert, canyon, volcano, valley |
+| `demo.wildlife` | UPLOADER | 120 photos of mammals, reptiles, amphibians and insects, plus bison and grizzly videos |
+| `demo.plants` | UPLOADER | 75 photos of wildflowers, trees, succulents and other plants |
+| `demo.oceans` | UPLOADER | 45 photos of waves, beaches, coastal cliffs, sea ice and mangroves |
+| `demo.marine` | UPLOADER | 75 photos of sea turtles, whales, seals, reef fish, sharks and invertebrates |
+| `demo.birds` | UPLOADER | 110 photos of raptors, seabirds, songbirds and other birds |
+| `demo.landscapes` | UPLOADER | 75 photos of mountains, waterfalls, glaciers, deserts and volcanoes |
 | `demo.researcher` | RESEARCHER | Searches all READY assets; owns no uploads |
 
 All seven use the public **local-only password `local-demo-only`**. Sign out
@@ -38,7 +39,7 @@ never be used as real deployment credentials.
 
 ## Presentation walkthrough
 
-1. Sign in as `demo.plants`: show eight READY plant assets and open **Edit** to
+1. Sign in as `demo.plants` and browse the READY plant assets. Open **Edit** to
    show contributor and rights notes. Switch to `demo.wildlife` to show another
    owner's collection, including videos.
 2. Sign in as `demo.researcher`. Search `yellow sunflower`, `sea turtle
@@ -55,10 +56,10 @@ never be used as real deployment credentials.
 
 **1. Curation:**
 [`demo-manifest.json`](../../ml-service/evaluation/demo-manifest.json) records
-domain, caption, original source title, creator, license and SHA-256. Photos
-were visually reviewed; unknown dates and locations remain unset. Media bytes
-live in ignored `ml-service/data/demo/`, outside Git. See the
-[full attribution list](../../ml-service/evaluation/DEMO_ATTRIBUTION.md).
+domain, caption, original source title, creator, license and SHA-256. Unknown
+dates and locations remain unset. Media bytes live in ignored
+`ml-service/data/demo/`, outside Git. See the
+[attribution guide](../../ml-service/evaluation/DEMO_ATTRIBUTION.md).
 
 **2. Identities and ownership:**
 [`accounts.json`](accounts.json) defines six uploaders and one researcher. The
@@ -70,12 +71,15 @@ Domain grouping uses ownership and title prefixes, without a new database schema
 
 **3. Upload and verification:**
 [`seed-demo.mjs`](../../frontend/scripts/seed-demo.mjs) initiates uploads, PUTs
-files to signed URLs, and completes them. The real worker creates Gemma image/frame embeddings and visual descriptions
-and marks assets READY. Before search checks, the script fills any missing
+files directly to the local Blob Storage emulator using signed URLs, and calls
+the completion endpoint. The backend verifies the stored blob before it queues
+indexing. The worker reads the blob, creates Gemma image/frame embeddings and
+visual descriptions, and marks the asset READY. The normal frontend upload
+follows the same sequence. Before search checks, the script fills any missing
 captions and embeddings for the exact seeded IDs and verifies that their
 semantic text embeddings reflect the current descriptions. The script checks all catalog counts, cross-uploader
 read denial, uploader search denial, six search prompts, signed access and a
-rendered sunflower preview. Uploader screens must show their expected counts.
+rendered photo preview. The uploader check visits every catalog page.
 
 ## Reruns and limits
 
@@ -120,5 +124,5 @@ READY fixture assets receive any missing descriptions and current image/frame
 embeddings through `mediamesh_ml.seed_enrich`; their text embeddings are then
 refreshed. Existing generated descriptions and user-written metadata are kept.
 Only seed asset IDs are enriched, so unrelated uploads with missing media do not
-block a demo rerun. The READY wait gives a fresh dataset up to an hour for CPU
+block a demo rerun. The READY wait gives a fresh dataset up to two hours for CPU
 inference. Interrupted runs can resume.

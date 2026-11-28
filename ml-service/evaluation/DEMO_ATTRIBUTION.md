@@ -1,8 +1,10 @@
 # Demo collection attribution
 
-48 photographs from Wikimedia Commons and two National Park Service video clips. Source licenses vary; retain each credit and applicable license when reusing the media. Public domain statements describe the source; other rights and jurisdictional restrictions can still apply.
+The demo includes 500 photographs from Wikimedia Commons and two National Park Service video clips. Retain the creator credit and applicable license when reusing the media. Public domain statements describe the source. Other rights and jurisdictional restrictions can still apply.
 
-The manifest pins downloaded bytes with SHA-256. Photos are resized source thumbnails; videos are short source clips. Original source titles are retained in `demo-manifest.json`. This curated showcase is separate from the retrieval evaluation dataset and is not a scientific benchmark.
+The [complete demo manifest](demo-manifest.json) records the creator, license, license link, original source page and SHA-256 for each of the 502 assets. The photographs typically use Wikimedia thumbnails. The 452 added images were selected from Wikimedia Commons featured photography galleries.
+
+# Original demo credits
 
 ## demo-elephant-01
 

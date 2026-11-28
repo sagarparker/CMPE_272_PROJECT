@@ -28,7 +28,7 @@ screen, then assign `UPLOADER` and `RESEARCHER`. Use separate browser profiles
 or sign out between accounts. Admin does not implicitly receive other roles.
 
 For a populated nature showcase, run `./infra/seed-demo.sh` using Node.js 24
-after starting the stack. It loads **48 photos and two videos** across wildlife,
+after starting the stack. It loads **500 photos and two videos** across wildlife,
 plants, oceans, marine life, birds and landscapes, with a dedicated uploader for
 each and a separate researcher. See the [demo accounts, setup and walkthrough](infra/demo/README.md)
 and [media attribution](ml-service/evaluation/DEMO_ATTRIBUTION.md).
