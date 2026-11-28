@@ -1,5 +1,8 @@
 # Azure student deployment: one VM + private Blob Storage
 
+For repeatable provisioning and deployment from your own computer, use the
+[Azure CLI script guide](AZURE_CLI.md). The manual procedure follows below.
+
 The current cloud target is Azure. `compose.deploy.yaml` is a standalone project
 with fresh volumes, HTTPS via Caddy, production-mode Keycloak, PostgreSQL/pgvector,
 Spring Boot, React, the Python API/worker and Prometheus. Only HTTP/HTTPS are

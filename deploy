@@ -1,0 +1,12 @@
+#!/bin/sh
+# Run from any directory; no secrets or cloud credentials belong in this file.
+set -eu
+cd "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
+for tool in python3 az git ssh; do
+  command -v "$tool" >/dev/null 2>&1 || {
+    echo "Missing $tool. On macOS install Azure CLI with: brew install azure-cli" >&2
+    exit 1
+  }
+done
+if [ "$#" -eq 0 ]; then set -- auto; fi
+exec python3 infra/deploy/azure.py --env-file "${DEPLOY_ENV_FILE:-.env.deploy}" "$@"
