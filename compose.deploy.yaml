@@ -72,6 +72,8 @@ services:
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
       KC_DB_USERNAME: keycloak
       KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?Run prepare.py}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       KC_HTTP_ENABLED: "true"
       KC_HTTP_RELATIVE_PATH: /auth
       KC_HOSTNAME: https://${APP_DOMAIN:?Set APP_DOMAIN}/auth
@@ -93,7 +95,6 @@ services:
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Run prepare.py}
       OIDC_ISSUER: https://${APP_DOMAIN:?Set APP_DOMAIN}/auth/realms/mediamesh
       OIDC_JWKS: http://keycloak:8080/auth/realms/mediamesh/protocol/openid-connect/certs
-      BOOTSTRAP_ADMIN_SUBJECT: ${BOOTSTRAP_ADMIN_SUBJECT:?Run prepare.py}
       KEYCLOAK_URL: http://keycloak:8080/auth
       KEYCLOAK_PROVISIONER_SECRET: ${KEYCLOAK_PROVISIONER_SECRET:?Run prepare.py or add the provisioner client}
       AZURE_STORAGE_ACCOUNT: ${AZURE_STORAGE_ACCOUNT:?Set AZURE_STORAGE_ACCOUNT}

@@ -16,8 +16,7 @@ export async function api(path, options = {}) {
     },
   });
   if (response.status === 401) {
-    await auth.logout({ redirectUri: window.location.origin });
-    throw new Error("Please sign in again.");
+    throw new Error("Your sign-in could not be verified. Please sign out and try signing in with Google again.");
   }
   const body = await response.json().catch(() => null);
   if (!response.ok)

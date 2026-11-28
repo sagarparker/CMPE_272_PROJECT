@@ -2,7 +2,7 @@
 
 All browser application calls use Spring Boot under `/api`. Supply the
 Keycloak access JWT as `Authorization: Bearer ...`. Validation checks signature,
-issuer, audience, and expiry. Authorization uses current PostgreSQL roles.
+issuer, audience, expiry, Google broker session, and verified email. Authorization uses current PostgreSQL roles.
 New users have no roles. ADMIN does not imply UPLOADER or RESEARCHER.
 
 Errors use `{"error":{"code":"...","message":"..."}}`. Anonymous/invalid/
@@ -16,14 +16,24 @@ uses `ML_SEARCH_BUSY`, both HTTP 503. See the observability documents for the
 
 | Route | Access | Response / behavior |
 |---|---|---|
-| GET `/api/me` | Authenticated | `{id,email,displayName,roles:[]}`; provisions account on first request |
+| GET `/api/me` | Authenticated | `{id,email,displayName,roles:[],primaryAdmin,requestedRoles:[],requestStatus}`; provisions Google identity on first request |
 | POST `/api/logout` | Authenticated | Revokes current API session; frontend also ends Keycloak session |
+| POST `/api/me/access-request` | Authenticated | `{roles:["UPLOADER","RESEARCHER"]}`; creates a pending request, returns profile with 201; no roles granted |
+| GET `/api/admin/access-requests` | ADMIN | Pending requests as `{id,user,roles,status}` |
+| POST `/api/admin/access-requests/{id}/decision` | ADMIN | `{approve:true}` approves all requested roles; `false` declines; 204; audited; repeat decision 409 |
 | GET `/api/admin/users` | ADMIN | Array of provisioned user profiles |
 | PUT `/api/admin/users/{id}/roles` | ADMIN | `{roles:["UPLOADER","RESEARCHER"]}` replaces complete role set; audited |
 
-The last administrator cannot be removed. Bootstrap uses one explicit issuer-
-validated subject on first provisioning only. `sid` identifies provider sessions;
-API sessions expire after 30 minutes idle or 8 hours absolute.
+Only verified Google sign-in as `sagar.parker@sjsu.edu` receives ADMIN. Additional
+administrators cannot be created or granted. The designated administrator cannot
+be removed or deleted. `requestStatus` is `NONE`, `PENDING`, `APPROVED`, or
+`REJECTED`. Only one request may be pending per user; rejected requests can be
+resubmitted. Approval adds roles to existing access. `sid` identifies provider
+sessions; API sessions expire after 30 minutes idle or 8 hours absolute.
+
+DELETE `/api/admin/users/{id}` requires ADMIN and revokes sessions, removes roles,
+closes pending requests, and retires the Keycloak identity. Uploaded media and
+audit records remain. `POST /api/admin/users` account provisioning was removed.
 
 ## Catalog and transfers
 

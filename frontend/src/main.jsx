@@ -6,7 +6,7 @@ import "./styles.css";
 import ErrorBoundary from "./ErrorBoundary";
 import { ResultCard, MediaPreview } from "./Gallery";
 
-const roles = ["ADMIN", "UPLOADER", "RESEARCHER"];
+const roles = ["UPLOADER", "RESEARCHER"];
 function ErrorNotice({ error }) {
   return error ? (
     <div role="alert" className="notice error">
@@ -358,212 +358,206 @@ function Research() {
     </section>
   );
 }
-function CreateAccount({ me, onCreated }) {
-  const [created, setCreated] = useState(null),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
+function AccessRequest({ me, onChanged }) {
+  const [error, setError] = useState(""), [busy, setBusy] = useState(false);
+  const pending = me.requestStatus === "PENDING";
   async function submit(event) {
     event.preventDefault();
-    const form = event.currentTarget;
-    setError("");
-    setCreated(null);
-    setBusy(true);
-    try {
-      const account = await api("/admin/users", {
-        method: "POST",
-        body: JSON.stringify(Object.fromEntries(new FormData(form))),
-      });
-      setCreated(account);
-      form.reset();
-      onCreated();
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
+    const roles = new FormData(event.currentTarget).getAll("roles");
+    if (!roles.length) { setError("Select at least one role."); return; }
+    setBusy(true); setError("");
+    try { await post("/me/access-request", { roles }); await onChanged(); }
+    catch (e) { setError(e.message); }
+    finally { setBusy(false); }
   }
-  return (
-    <section className="panel account-create">
-      <h3>Create an account</h3>
-      <p>
-        Share the temporary password privately. At first sign-in the person
-        sets their own password and enrolls an authenticator app; later
-        sign-ins use both.
-      </p>
-      <ErrorNotice error={error} />
-      <form onSubmit={submit}>
-        <div className="fields">
-          <label>
-            Username
-            <input name="username" required pattern="[a-z0-9][a-z0-9._\-]{2,39}"
-              title="3–40 lowercase letters, digits, dots, hyphens or underscores" />
-          </label>
-          <label>
-            Email
-            <input name="email" type="email" required maxLength="254" />
-          </label>
-          <label>
-            First name
-            <input name="firstName" required maxLength="80" />
-          </label>
-          <label>
-            Last name
-            <input name="lastName" required maxLength="80" />
-          </label>
-          <label>
-            Role
-            <select name="role" defaultValue="RESEARCHER">
-              <option value="RESEARCHER">Researcher</option>
-              <option value="UPLOADER">Uploader</option>
-              {me.primaryAdmin && <option value="ADMIN">Administrator</option>}
-            </select>
-          </label>
-        </div>
-        <button disabled={busy}>Create account</button>
-      </form>
-      {created && (
-        <div role="status" className="notice">
-          <p>
-            Created <strong>{created.username}</strong>. Temporary password
-            (shown once): <code>{created.temporaryPassword}</code>
-          </p>
-          <button className="secondary" type="button"
-            onClick={() => navigator.clipboard?.writeText(created.temporaryPassword)}>
-            Copy password
-          </button>
-        </div>
-      )}
-    </section>
-  );
+  if (pending) return <section className="panel access-request-panel access-pending-panel">
+    <div className="pending-heading">
+      <span className="pending-clock" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8" /><path d="M12 7v5l3 2" /></svg></span>
+      <span className="pending-label">AWAITING APPROVAL</span>
+    </div>
+    <h2>Your access request is pending</h2>
+    <p className="pending-description" role="alert">Your sign-in request has not yet been approved. Once the administrator approves it, your workspace will open automatically.</p>
+    <dl className="pending-details">
+      <div><dt>Requested access</dt><dd>{me.requestedRoles.map(role => <span className="pending-role" key={role}>{role === "UPLOADER" ? "Uploader" : "Researcher"}</span>)}</dd></div>
+    </dl>
+    <div className="access-request-actions">
+      <span className="access-action-note"><span className="pending-status-dot" aria-hidden="true" />Checking for updates automatically</span>
+      <div className="access-action-buttons">
+        <button type="button" className="secondary access-refresh" onClick={onChanged}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5" /><path d="M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 17.9 17" /></svg>
+          Refresh access
+        </button>
+      </div>
+    </div>
+  </section>;
+  return <section className="panel account-create access-request-panel">
+    <span className="eyebrow">WORKSPACE ACCESS</span>
+    <h2>Choose your workspace access</h2>
+    <p>Select uploader, researcher, or both. An administrator must approve your request before you can use the selected tools.</p>
+    {me.requestStatus === "REJECTED" && <p>Your last request was declined. You can submit a new request.</p>}
+    {me.requestStatus === "APPROVED" && <p>Your last request was approved. Your current roles are shown in the navigation above.</p>}
+    <ErrorNotice error={error} />
+    <form id="access-request-form" onSubmit={submit}>
+      <fieldset className="role-options"><legend>Select one or both roles</legend>
+        {roles.map(role => {
+          const approved = me.roles.includes(role);
+          const label = role === "UPLOADER" ? "Uploader" : "Researcher";
+          return <label className={`role-option${approved ? " role-option-approved" : ""}`} key={`${role}-${approved}`}>
+            <input type="checkbox" name="roles" value={role} aria-label={label} defaultChecked={approved} disabled={approved} />
+            <span className="role-option-copy"><strong>{label}</strong><span>{role === "UPLOADER" ? "Upload images and media for indexing. Manage your contributions and processing status." : "Search the archive, use the search API, and view indexed media."}</span>
+              {approved ? <small className="role-approved-badge"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m3.5 8 3 3 6-6" /></svg>Approved</small> : <small className="role-available-note">Select to request access</small>}
+            </span>
+          </label>;
+        })}
+      </fieldset>
+    </form>
+    <div className="access-request-actions">
+      <span className="access-action-note">You can select both roles.</span>
+      <div className="access-action-buttons">
+        <button type="button" className="secondary access-refresh" disabled={busy} onClick={onChanged}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5" /><path d="M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 17.9 17" /></svg>
+          Refresh access
+        </button>
+        <button form="access-request-form" type="submit" className="access-submit" disabled={busy || roles.every(role => me.roles.includes(role))}>
+          {busy ? "Submitting…" : "Request access"}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5" /></svg>
+        </button>
+      </div>
+    </div>
+  </section>;
+}
+function MemberIdentity({ user }) {
+  const initials = user.displayName.split(" ").filter(Boolean).slice(0, 2).map(name => name[0]).join("");
+  return <div className="member-identity">
+    <span className="member-avatar" aria-hidden="true">{initials}</span>
+    <div className="member-copy"><strong>{user.displayName}{user.primaryAdmin && <span className="admin-owner-badge">Admin</span>}</strong><p>{user.email}</p></div>
+  </div>;
 }
 function Admin({ me, onChanged }) {
   const [users, setUsers] = useState([]),
+    [requests, setRequests] = useState([]),
+    [reviewing, setReviewing] = useState(null),
+    [memberQuery, setMemberQuery] = useState(""),
     [error, setError] = useState(""),
     [status, setStatus] = useState("");
-  const load = () =>
-    api("/admin/users")
-      .then(setUsers)
-      .catch((e) => setError(e.message));
+  const load = async () => {
+    try {
+      const [members, pending] = await Promise.all([api("/admin/users"), api("/admin/access-requests")]);
+      setUsers(members); setRequests(pending);
+    } catch (e) { setError(e.message); }
+  };
+  async function decide(request, approve) {
+    setError(""); setStatus(""); setReviewing(request.id);
+    try {
+      await post(`/admin/access-requests/${request.id}/decision`, { approve });
+      setStatus(`${approve ? "Approved" : "Declined"} access for ${request.user.displayName}.`);
+      await load();
+    } catch (e) { setError(e.message); }
+    finally { setReviewing(null); }
+  }
   useEffect(() => {
     load();
+    const timer = setInterval(load, 15000);
+    return () => clearInterval(timer);
   }, []);
   async function save(event, user) {
     event.preventDefault();
-    setError("");
-    setStatus("");
+    setError(""); setStatus("");
     const assigned = new FormData(event.currentTarget).getAll("roles");
-    // A locked (disabled) ADMIN checkbox is not submitted; keep the role unchanged.
-    const adminLocked = !me.primaryAdmin || user.primaryAdmin;
-    if (adminLocked && user.roles.includes("ADMIN") && !assigned.includes("ADMIN"))
-      assigned.push("ADMIN");
+    if (user.primaryAdmin) assigned.push("ADMIN");
     try {
-      await api(`/admin/users/${user.id}/roles`, {
-        method: "PUT",
-        body: JSON.stringify({ roles: assigned }),
-      });
+      await api(`/admin/users/${user.id}/roles`, { method: "PUT", body: JSON.stringify({ roles: assigned }) });
       setStatus(`Saved roles for ${user.displayName}.`);
-      // Reload the list and your own access, so tab changes appear immediately.
       await Promise.all([load(), onChanged()]);
-    } catch (e) {
-      setError(e.message);
-    }
+    } catch (e) { setError(e.message); }
   }
-  const canDelete = (user) =>
-    user.id !== me.id &&
-    !user.primaryAdmin &&
-    (me.primaryAdmin || !user.roles.includes("ADMIN"));
+  const canDelete = user => user.id !== me.id && !user.primaryAdmin && (me.primaryAdmin || !user.roles.includes("ADMIN"));
   async function remove(user) {
-    setError("");
-    setStatus("");
-    if (
-      !window.confirm(
-        `Delete ${user.displayName} (${user.email})?\n\nThey will no longer be able to sign in. ` +
-          "Media they uploaded stays in the library. This cannot be undone.",
-      )
-    )
-      return;
+    setError(""); setStatus("");
+    if (!window.confirm(`Delete ${user.displayName} (${user.email})?\n\nThey will no longer be able to sign in. Media they uploaded stays in the library. This cannot be undone.`)) return;
     try {
       await api(`/admin/users/${user.id}`, { method: "DELETE" });
       setStatus(`Deleted ${user.displayName}.`);
       await load();
-    } catch (e) {
-      setError(e.message);
-    }
+    } catch (e) { setError(e.message); }
   }
+  const managedUsers = users.filter(user => user.id !== me.id);
+  const filteredUsers = managedUsers.filter(user => `${user.displayName} ${user.email}`.toLowerCase().includes(memberQuery.trim().toLowerCase()))
+    .sort((a, b) => Number(Boolean(b.primaryAdmin)) - Number(Boolean(a.primaryAdmin)) || a.displayName.localeCompare(b.displayName));
   return (
-    <>
-      <div className="section-title">
-        <span className="eyebrow">ADMINISTRATION</span>
-        <h2>Manage library access</h2>
-        <p>
-          Create accounts for researchers and uploaders. Role changes apply on
-          their next API request.
-          {!me.primaryAdmin &&
-            " Only the primary administrator can create or change administrators."}
-        </p>
-      </div>
-      <CreateAccount me={me} onCreated={load} />
-      <ErrorNotice error={error} />
-      {status && (
-        <div role="status" className="notice">
-          {status}
+    <div className="admin-workspace">
+      <div className="admin-page-heading">
+        <div><span className="eyebrow">ADMINISTRATION</span><h2>Manage library access</h2><p>Review access requests and manage your workspace members.</p></div>
+        <div className="admin-summary" aria-label="Workspace overview">
+          <div><strong>{requests.length}</strong><span>Pending requests</span></div>
+          <div><strong>{users.length}</strong><span>Workspace members</span></div>
         </div>
-      )}
-      <div className="admin-toolbar">
-        <h3>Workspace members <span>{users.length} accounts</span></h3>
-        <button className="secondary" onClick={load}>Refresh users</button>
       </div>
-      <section className="panel user-list">
-        {users.map((user) => (
-          <form
-            className="user-row"
-            key={`${user.id}-${user.roles.join()}`}
-            onSubmit={(event) => save(event, user)}
-          >
-            <div>
-              <strong>{user.displayName}</strong>
-              <p>{user.email}</p>
-            </div>
-            <fieldset>
-              <legend>Assigned roles</legend>
-              {roles.map((role) => (
-                <label key={role}>
-                  <input
-                    type="checkbox"
-                    name="roles"
-                    value={role}
-                    defaultChecked={user.roles.includes(role)}
-                    disabled={role === "ADMIN" && (!me.primaryAdmin || user.primaryAdmin)}
-                  />
-                  {role}
-                </label>
-              ))}
-            </fieldset>
-            <div className="user-actions">
-              <button>Save roles</button>
-              {canDelete(user) && (
-                <button type="button" className="danger" onClick={() => remove(user)}>
-                  Delete user
-                </button>
-              )}
-            </div>
-          </form>
-        ))}
+      <ErrorNotice error={error} />
+      {status && <div role="status" className="notice admin-feedback">{status}</div>}
+      <section className="panel admin-requests">
+        <div className="admin-section-heading"><div><h3>Pending access requests <span className="admin-count">({requests.length})</span></h3><p>Approve the requested roles or decline access.</p></div><span className="admin-live-note"><span />Updates automatically</span></div>
+        {!requests.length && <div className="admin-empty"><span className="admin-empty-check" aria-hidden="true">✓</span><div><strong>All caught up</strong><p>No requests awaiting approval.</p></div></div>}
+        {requests.map(request => <article className="admin-request-row" key={request.id}>
+          <MemberIdentity user={request.user} />
+          <div className="admin-requested-roles"><span className="admin-column-label">Requested access</span><div>{request.roles.map(role => <span className="admin-role-badge" key={role}>{role === "UPLOADER" ? "Uploader" : "Researcher"}</span>)}</div></div>
+          <div className="admin-row-actions">
+            <button disabled={reviewing !== null} className="secondary admin-decline" onClick={() => decide(request, false)}>Decline request</button>
+            <button disabled={reviewing !== null} className="admin-approve" onClick={() => decide(request, true)}>{reviewing === request.id ? "Saving…" : "Approve request"}</button>
+          </div>
+        </article>)}
       </section>
-    </>
+      <section className="panel admin-members">
+        <div className="admin-section-heading admin-members-toolbar">
+          <div><h3>Workspace members <span className="admin-count">({managedUsers.length})</span></h3><p>Select roles, then save changes for that member.</p></div>
+          <div className="admin-member-tools">
+            <label className="admin-member-search"><span className="sr-only">Search members</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><input type="search" placeholder="Search members…" value={memberQuery} onChange={event => setMemberQuery(event.target.value)} /></label>
+            <button type="button" className="secondary admin-refresh" onClick={load} aria-label="Refresh users" title="Refresh users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 17.9 17"/></svg></button>
+          </div>
+        </div>
+        <div className="admin-table-heading" aria-hidden="true"><span>Member</span><span>Access roles</span><span>Actions</span></div>
+        {!filteredUsers.length && <div className="admin-empty"><p>No members match your search.</p></div>}
+        {filteredUsers.map(user => <form className="user-row admin-member-row" key={`${user.id}-${user.roles.join()}`} onSubmit={event => save(event, user)}>
+          <MemberIdentity user={user} />
+          <fieldset className="admin-role-options"><legend className="sr-only">Assigned roles for {user.displayName}</legend>
+            {roles.map(role => <label className="admin-role-toggle" key={role}><input type="checkbox" name="roles" value={role} aria-label={role} defaultChecked={user.roles.includes(role)} /><span>{role === "UPLOADER" ? "Uploader" : "Researcher"}</span></label>)}
+          </fieldset>
+          <div className="admin-row-actions">
+            <button className="secondary admin-save">Save roles</button>
+            {canDelete(user) ? <button type="button" className="danger admin-delete" aria-label={`Delete user ${user.displayName}`} title="Delete user" onClick={() => remove(user)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5m4-5v5"/></svg></button> : <span className="admin-protected" title="The administrator account is protected">Owner</span>}
+          </div>
+        </form>)}
+        <div className="admin-members-footer"><span>{filteredUsers.length} of {managedUsers.length} members</span><span>Administrator · {me.email}</span></div>
+      </section>
+      <section className="panel admin-self-roles" aria-labelledby="workspace-roles-heading">
+        <div className="admin-section-heading"><div><h3 id="workspace-roles-heading">Your workspace roles</h3><p>Enable upload or search access for your account. Your administrator role stays active.</p></div></div>
+        <form className="admin-member-row" key={me.roles.join()} onSubmit={event => save(event, me)}>
+          <MemberIdentity user={me} />
+          <fieldset className="admin-role-options"><legend className="sr-only">Your workspace roles</legend>
+            {roles.map(role => <label className="admin-role-toggle" key={role}><input type="checkbox" name="roles" value={role} aria-label={role} defaultChecked={me.roles.includes(role)} /><span>{role === "UPLOADER" ? "Uploader" : "Researcher"}</span></label>)}
+          </fieldset>
+          <div className="admin-row-actions"><button className="secondary admin-save">Save workspace roles</button></div>
+        </form>
+      </section>
+    </div>
   );
 }
+
 function App() {
   const [me, setMe] = useState(null),
     [error, setError] = useState(""),
     [tab, setTab] = useState("");
+  const previousRoles = useRef(null);
   const refresh = () =>
     api("/me")
       .then((user) => {
+        const justApproved = previousRoles.current?.length === 0 && user.roles.length > 0;
+        previousRoles.current = user.roles;
         setMe(user);
+        setError("");
         setTab(
           (current) =>
-            current ||
+            (!justApproved && current) ||
             (user.roles.includes("RESEARCHER")
               ? "Search"
               : user.roles.includes("UPLOADER")
@@ -605,23 +599,26 @@ function App() {
     ["Upload", "UPLOADER"],
     ["Admin", "ADMIN"],
   ].filter(([, role]) => me?.roles.includes(role));
+  if (me && !me.roles.includes("ADMIN") && !roles.every(role => me.roles.includes(role))) tabs.push(["Access", ""]);
   const selected = tabs.some(([name]) => name === tab) ? tab : tabs[0]?.[0];
   return (
-    <>
+    <div className={tabs.length === 1 && selected === "Access" ? "access-only-shell" : undefined}>
       <header>
         <a className="brand" href="/">
           <span className="brand-box" />
           MediaMesh<span className="brand-sub">EDITORIAL ARCHIVE</span>
         </a>
         <div className="identity">
-          <span className="identity-avatar" aria-hidden="true">{me?.displayName?.split(" ").filter(Boolean).slice(0,2).map(name=>name[0]).join("")}</span>
-          <span>{me?.displayName}</span>
+          <div className="identity-profile">
+            <span className="identity-avatar" aria-hidden="true">{me?.displayName?.split(" ").filter(Boolean).slice(0,2).map(name=>name[0]).join("")}</span>
+            <span className="identity-details"><span className="identity-name">{me?.displayName}</span><span className="identity-email" title={me?.email}>{me?.email}</span></span>
+          </div>
           <button className="secondary" onClick={logout}>
             Sign out
           </button>
         </div>
       </header>
-      <nav aria-label="Main navigation">
+      {tabs.length > 1 && <nav aria-label="Main navigation">
         {tabs.map(([name]) => (
           <button
             key={name}
@@ -631,20 +628,13 @@ function App() {
             {name}
           </button>
         ))}
-      </nav>
+      </nav>}
       <main>
         <ErrorNotice error={error} />
         {!me ? (
-          <p>Loading your workspace…</p>
-        ) : !tabs.length ? (
-          <section className="panel">
-            <h2>Welcome, {me.displayName}</h2>
-            <p>
-              Your account is ready. Ask your administrator to grant uploader or
-              researcher access.
-            </p>
-            <button onClick={refresh}>Refresh access</button>
-          </section>
+          error ? <section className="panel"><h2>Unable to complete sign-in</h2><p>Sign out and try Google sign-in again. Your access request, if submitted, is saved.</p><button onClick={refresh}>Try again</button></section> : <p>Loading your workspace…</p>
+        ) : selected === "Access" ? (
+          <AccessRequest me={me} onChanged={refresh} />
         ) : selected === "Search" ? (
           <Research />
         ) : selected === "Upload" ? (
@@ -657,10 +647,10 @@ function App() {
         MediaMesh · CMPE 272 · Hypothetical National Geographic editorial
         scenario
       </footer>
-    </>
+    </div>
   );
 }
-auth.onTokenExpired = () => auth.updateToken(30).catch(() => auth.login());
+auth.onTokenExpired = () => auth.updateToken(30).catch(() => auth.login({ idpHint: "google" }));
 auth
   .init({
     onLoad: "login-required",

@@ -1,16 +1,17 @@
 import { test, expect } from "@playwright/test";
+import { join } from "node:path";
 
 const enabled = process.env.RUN_RELIABILITY_DEMO === "1";
 test("local delay: bulkhead rejects excess requests while identity remains responsive", async ({
   browser,
 }) => {
   test.skip(
-    !enabled,
+    !enabled || !process.env.GOOGLE_AUTH_STATE_DIR,
     "Run explicitly with compose.reliability-demo.yaml after the normal acceptance test seeds READY media.",
   );
   const contexts = [];
   async function login(username) {
-    const context = await browser.newContext();
+    const context = await browser.newContext({ storageState: join(process.env.GOOGLE_AUTH_STATE_DIR, `${username}.json`) });
     contexts.push(context);
     const page = await context.newPage();
     let token;
@@ -19,9 +20,6 @@ test("local delay: bulkhead rejects excess requests while identity remains respo
         token = request.headers().authorization;
     });
     await page.goto("/");
-    await page.locator("#username").fill(username);
-    await page.locator("#password").fill("local-demo-only");
-    await page.locator("#kc-login").click();
     await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
     await expect.poll(() => token).toBeTruthy();
     const response = await page.request.get("/api/me", {
@@ -83,14 +81,14 @@ test("local outage: breaker fails fast and recovers after ML restart", async ({
   browser,
 }) => {
   test.skip(
-    process.env.RUN_CIRCUIT_DEMO !== "1",
+    process.env.RUN_CIRCUIT_DEMO !== "1" || !process.env.GOOGLE_AUTH_STATE_DIR,
     "Explicit opt-in: this test stops and restarts the local ML API.",
   );
   const { execFileSync } = await import("node:child_process");
   const { resolve } = await import("node:path");
   const contexts = [];
   async function login(username) {
-    const context = await browser.newContext();
+    const context = await browser.newContext({ storageState: join(process.env.GOOGLE_AUTH_STATE_DIR, `${username}.json`) });
     contexts.push(context);
     const page = await context.newPage();
     let token;
@@ -98,9 +96,6 @@ test("local outage: breaker fails fast and recovers after ML restart", async ({
       if (r.url().endsWith("/api/me")) token = r.headers().authorization;
     });
     await page.goto("/");
-    await page.locator("#username").fill(username);
-    await page.locator("#password").fill("local-demo-only");
-    await page.locator("#kc-login").click();
     await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
     await expect.poll(() => token).toBeTruthy();
     const response = await page.request.get("/api/me", {

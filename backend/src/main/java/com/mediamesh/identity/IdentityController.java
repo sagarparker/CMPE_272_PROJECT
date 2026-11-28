@@ -22,18 +22,21 @@ public class IdentityController {
     @GetMapping("/api/admin/users")
     @PreAuthorize("hasRole('ADMIN')")
     public List<IdentityService.User> users() { return identities.users(); }
-    public record AccountRequest(
-            @NotNull @Pattern(regexp = "[a-z0-9][a-z0-9._-]{2,39}") String username,
-            @NotBlank @Email @Size(max = 254) String email,
-            @NotBlank @Size(max = 80) String firstName,
-            @NotBlank @Size(max = 80) String lastName,
-            @NotNull IdentityService.Role role) {}
-    @PostMapping("/api/admin/users")
-    @PreAuthorize("hasRole('ADMIN')")
+    public record AccessRequest(@NotEmpty Set<IdentityService.@NotNull Role> roles) {}
+    @PostMapping("/api/me/access-request")
     @ResponseStatus(HttpStatus.CREATED)
-    public IdentityService.CreatedAccount create(@Valid @RequestBody AccountRequest body, Authentication auth) {
-        return identities.createAccount(UUID.fromString(auth.getName()), new IdentityService.NewAccount(
-                body.username(), body.email().trim(), body.firstName().trim(), body.lastName().trim(), body.role()));
+    public IdentityService.User requestAccess(@Valid @RequestBody AccessRequest body, Authentication auth) {
+        return identities.requestAccess(UUID.fromString(auth.getName()), body.roles());
+    }
+    @GetMapping("/api/admin/access-requests")
+    @PreAuthorize("hasRole('ADMIN')")
+    public List<IdentityService.AccessRequest> requests() { return identities.requests(); }
+    public record Decision(@NotNull Boolean approve) {}
+    @PostMapping("/api/admin/access-requests/{id}/decision")
+    @PreAuthorize("hasRole('ADMIN')")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void decide(@PathVariable UUID id, @Valid @RequestBody Decision body, Authentication auth) {
+        identities.decide(UUID.fromString(auth.getName()), id, body.approve());
     }
     @DeleteMapping("/api/admin/users/{id}")
     @PreAuthorize("hasRole('ADMIN')")

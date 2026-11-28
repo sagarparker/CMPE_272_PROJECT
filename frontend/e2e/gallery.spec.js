@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { openOauthPage } from "./oauth-harness";
 
 const assets = [
   { assetId: "gallery-bird", title: "Birds | Puffin portrait", mediaType: "image", score: 0.32 },
@@ -14,10 +15,7 @@ async function gallery(page) {
   });
   await page.route("**/api/assets/*/access-url", route => route.fulfill({ json: { url: "http://localhost:8080/gallery-test.jpg" } }));
   await page.route("**/gallery-test.jpg", route => route.fulfill({ path: "e2e/fixtures/red.png", contentType: "image/png" }));
-  await page.goto("/");
-  await page.locator("#username").fill("employee");
-  await page.locator("#password").fill("local-demo-only");
-  await page.locator("#kc-login").click();
+  await openOauthPage(page, { id: "gallery-test", displayName: "Gallery tester", roles: ["RESEARCHER"] }, true, "http://localhost:8080/");
   await page.getByRole("button", { name: "Sign out" }).waitFor();
 }
 

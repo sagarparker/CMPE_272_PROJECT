@@ -26,17 +26,15 @@ class DeploymentTests(unittest.TestCase):
             )
             realm = json.loads((output / "realm/mediamesh-realm.json").read_text())
             people = [u for u in realm["users"] if not u.get("serviceAccountClientId")]
-            self.assertEqual(len(people), 1)
-            self.assertEqual(people[0]["id"], env["BOOTSTRAP_ADMIN_SUBJECT"])
+            self.assertEqual(people, [])
+            self.assertNotIn("BOOTSTRAP_ADMIN_SUBJECT", env)
+            self.assertIn("GOOGLE_CLIENT_ID", env)
+            self.assertEqual(realm["identityProviders"][0]["alias"], "google")
             [service] = [u for u in realm["users"] if u.get("serviceAccountClientId")]
             self.assertEqual(service["clientRoles"], {"realm-management": ["manage-users"]})
             [provisioner] = [c for c in realm["clients"] if c["clientId"] == "mediamesh-provisioner"]
             self.assertEqual(provisioner["secret"], env["KEYCLOAK_PROVISIONER_SECRET"])
             self.assertNotIn("local-provisioner-only", json.dumps(realm))
-            self.assertEqual(
-                people[0]["requiredActions"],
-                ["UPDATE_PASSWORD", "CONFIGURE_TOTP"],
-            )
             self.assertFalse(realm["clients"][0]["directAccessGrantsEnabled"])
             self.assertEqual(
                 realm["clients"][0]["webOrigins"],

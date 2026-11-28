@@ -11,7 +11,7 @@ a { color: var(--forest); text-underline-offset: 3px; }
 .auth-brand { position: absolute; top: 40px; left: 42px; display: flex; align-items: center; gap: 12px; color: #fffef4; text-decoration: none; z-index: 2; font-size: 23px; font-weight: 700; }
 .auth-brand-mark { width: 22px; height: 33px; border: 3px solid #e8c650; display: block; }
 .auth-brand-sub { display: block; font-size: 8px; letter-spacing: 2.1px; margin-top: 2px; font-weight: 500; }
-.illustration-caption { position: absolute; left: 42px; right: 40px; bottom: 78px; z-index: 2; color: #fffef4; }
+.illustration-caption { position: absolute; left: 42px; right: 40px; bottom: 42px; z-index: 2; color: #fffef4; }
 .auth-eyebrow { display: block; font-size: 9px; letter-spacing: 1.8px; font-weight: 600; color: var(--muted); }
 .illustration-caption .auth-eyebrow { color: #dfdfbf; }
 .illustration-caption h1 { font: 400 clamp(26px,3vw,43px)/1.35 var(--font-display); letter-spacing: -.8px; margin: 16px 0; }
@@ -49,10 +49,58 @@ a { color: var(--forest); text-underline-offset: 3px; }
 .auth-panel-footer { border-top: 1px solid var(--line); padding-top: 18px; flex-wrap: wrap; font-size: 9px; }
 #kc-form-options a,#kc-info a { font-size: 12px; }
 @media(max-width:1000px) { .auth-form-panel { padding: 28px; } .auth-brand,.illustration-caption { left: 28px; } .auth-panel-top { font-size: 7px; } }
-@media(max-width:700px) { .auth-shell { grid-template-columns: 1fr; } .auth-illustration { position: relative; width: 100%; height: 38svh; min-height: 230px; max-height: 340px; } .auth-brand { top: 22px; left: 24px; font-size: 19px; } .illustration-caption { left: 24px; bottom: 25px; } .illustration-caption h1 { font-size: 23px; margin: 7px 0; } .illustration-caption p,.illustration-caption .auth-eyebrow,.scene-motion { display: none; } .auth-form-panel { min-height: 62svh; padding: 24px; } .auth-card { padding: 36px 0; max-width: 420px; } .auth-card h2 { font-size: 27px; } .auth-panel-top { display: none; } }
+@media(max-width:700px) { .auth-shell { grid-template-columns: 1fr; } .auth-illustration { position: relative; width: 100%; height: 38svh; min-height: 230px; max-height: 340px; } .auth-brand { top: 22px; left: 24px; font-size: 19px; } .illustration-caption { left: 24px; bottom: 18px; } .illustration-caption h1 { font-size: 23px; margin: 7px 0; } .illustration-caption p,.illustration-caption .auth-eyebrow,.scene-motion { display: none; } .auth-form-panel { min-height: 62svh; padding: 24px; } .auth-card { padding: 36px 0; max-width: 420px; } .auth-card h2 { font-size: 27px; } .auth-panel-top { display: none; } }
 @media(prefers-reduced-motion:reduce) { * { scroll-behavior: auto !important; } }
 .auth-card form p,.auth-card li,.auth-card ol,.auth-card ul { font-size: 12px; line-height: 1.7; }
 .auth-card ol { padding-left: 20px; }
 .auth-card code { overflow-wrap: anywhere; }
 .auth-card #kc-totp-secret-qr-code { display: block; max-width: 180px; height: auto; margin: 16px auto; }
 .auth-panel-top { flex-wrap: wrap; row-gap: 8px; }
+.google-signin { display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 4px; background: transparent; text-decoration: none; cursor: pointer; vertical-align: middle; }
+.google-signin img { display: block; max-width: 100%; height: auto; }
+.google-signin:hover { background: transparent; box-shadow: 0 1px 3px #3c40434d; }
+.google-signin:focus-visible { outline: 2px solid #1a73e8; outline-offset: 3px; }
+
+/* An open editorial layout, without a separate login card. */
+.auth-shell:has(.auth-google-panel) { grid-template-columns: 56% 44%; }
+.auth-google-panel { position: relative; background: #f5f5ef; padding: 36px 48px; }
+.auth-google-panel .auth-panel-top { font-size: 9px; letter-spacing: 1.2px; }
+.auth-google-card { max-width: 400px; margin: auto; padding: 42px 0; text-align: left; background: none; border: 0; border-radius: 0; box-shadow: none; }
+.auth-google-card > .auth-eyebrow { display: flex; align-items: center; gap: 12px; margin: 0 0 24px; font-size: 9px; letter-spacing: 2px; font-weight: 500; color: #7c876f; }
+.auth-google-card > .auth-eyebrow::before { content: ''; width: 28px; height: 2px; background: #c3a746; }
+.auth-google-card h2 { font-size: clamp(38px, 3.5vw, 54px); line-height: 1.25; letter-spacing: -1.6px; margin: 0 0 24px; color: #20382d; }
+.auth-google-card .auth-intro { margin: 0 0 34px; max-width: 310px; font-size: 14px; line-height: 1.8; color: #778071; }
+.auth-provider-area { display: flex; justify-content: flex-start; padding-top: 28px; border-top: 1px solid #dce2d5; }
+.auth-provider-area .google-signin { border-radius: 5px; }
+.auth-google-panel .auth-panel-footer { margin-top: 28px; }
+@media(max-width:1000px) {
+ .auth-shell:has(.auth-google-panel) { grid-template-columns: 50% 50%; }
+ .auth-google-panel { padding: 28px; }
+ .auth-google-card h2 { font-size: 40px; }
+}
+@media(max-width:700px) {
+ .auth-shell:has(.auth-google-panel) { grid-template-columns: 1fr; }
+ .auth-google-panel { padding: 28px; justify-content: center; }
+ .auth-google-card { padding: 26px 0; max-width: 400px; }
+ .auth-google-card h2 { font-size: 38px; }
+ .auth-google-card > .auth-eyebrow { margin-bottom: 20px; }
+ .auth-google-card .auth-intro { font-size: 13px; margin-bottom: 26px; }
+ .auth-provider-area { padding-top: 24px; }
+}
+
+.auth-shell { position: relative; isolation: isolate; }
+.auth-tree-trunk { position: absolute; z-index: 20; top: 0; left: 50%; transform: translateX(-50%); width: 120px; height: 100svh; pointer-events: none; }
+.auth-shell:has(.auth-google-panel) > .auth-tree-trunk { left: 56%; }
+@media(max-width:1000px) { .auth-shell:has(.auth-google-panel) > .auth-tree-trunk { left: 50%; } }
+@media(max-width:700px) {
+ .auth-shell > .auth-tree-trunk, .auth-shell:has(.auth-google-panel) > .auth-tree-trunk { left: auto; right: 0; transform: none; width: 80px; height: clamp(230px, 38svh, 340px); }
+}
+/* Reserve room for the foreground trunk across the entire sign-in panel. */
+@media(min-width:701px) {
+ .auth-form-panel { padding-left: 84px; }
+ .auth-google-panel { padding-left: 96px; }
+}
+@media(min-width:701px) and (max-width:1000px) {
+ .auth-google-panel { padding-left: 84px; }
+ .auth-google-card h2 { font-size: 36px; }
+}

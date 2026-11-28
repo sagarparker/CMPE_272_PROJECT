@@ -1,8 +1,9 @@
 import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 async function login(browser, username) {
-  const context = await browser.newContext(),
+  const context = await browser.newContext({ storageState: join(process.env.GOOGLE_AUTH_STATE_DIR, `${username}.json`) }),
     page = await context.newPage();
   let token;
   page.on("request", (request) => {
@@ -10,9 +11,6 @@ async function login(browser, username) {
       token = request.headers().authorization;
   });
   await page.goto("/");
-  await page.locator("#username").fill(username);
-  await page.locator("#password").fill("local-demo-only");
-  await page.locator("#kc-login").click();
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
   await expect.poll(() => token).toBeTruthy();
   const response = await page.request.get("/api/me", {
@@ -32,9 +30,10 @@ async function grant(admin, target, roles) {
 test("SSO, role grants, image/video indexing, search, preview, download and revocation", async ({
   browser,
 }, testInfo) => {
+  test.skip(!process.env.GOOGLE_AUTH_STATE_DIR, "Full-stack Google acceptance requires pre-authenticated test account storage states; see frontend/README.md.");
   const employee = await login(browser, "employee");
   await expect(
-    employee.page.getByText("Your account is ready.", { exact: false }),
+    employee.page.getByRole("heading", { name: "Choose your workspace access" }),
   ).toBeVisible();
   const denied = await employee.page.request.post("/api/search", {
     headers: { Authorization: employee.token },
@@ -61,7 +60,7 @@ test("SSO, role grants, image/video indexing, search, preview, download and revo
     }
     await admin.page.getByRole("button", { name: "Refresh users" }).click();
     await expect(
-      admin.page.getByText("uploader@mediamesh.local"),
+      admin.page.getByText(uploader.user.email),
     ).toBeVisible();
     await uploader.page.reload();
     await researcher.page.reload();

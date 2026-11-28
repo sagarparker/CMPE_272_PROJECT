@@ -21,7 +21,6 @@ mediamesh:
     issuer: ${OIDC_ISSUER:http://localhost:8081/realms/mediamesh}
     jwk-set-uri: ${OIDC_JWKS:http://localhost:8081/realms/mediamesh/protocol/openid-connect/certs}
     audience: ${OIDC_AUDIENCE:mediamesh-api}
-    bootstrap-subject: ${BOOTSTRAP_ADMIN_SUBJECT:}
   keycloak:
     url: ${KEYCLOAK_URL:}
     realm: ${KEYCLOAK_REALM:mediamesh}

@@ -6,7 +6,6 @@ import json
 import os
 import re
 import secrets
-import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -37,7 +36,6 @@ def prepare(domain, email, account, admin_email, container, output):
     realm = copy.deepcopy(
         json.loads((ROOT / "infra/keycloak/mediamesh-realm.json").read_text())
     )
-    subject, password = str(uuid.uuid4()), secrets.token_hex(24)
     origin = f"https://{domain}"
     realm.update(
         sslRequired="external",
@@ -51,19 +49,8 @@ def prepare(domain, email, account, admin_email, container, output):
     provisioner = next(c for c in realm["clients"] if c["clientId"] == "mediamesh-provisioner")
     provisioner["secret"] = provisioner_secret
     service_account = next(u for u in realm["users"] if u.get("serviceAccountClientId"))
-    realm["users"] = [
-        service_account,
-        {
-            "id": subject,
-            "username": "archive-admin",
-            "enabled": True,
-            "email": admin_email,
-            "firstName": "Archive",
-            "lastName": "Administrator",
-            "requiredActions": ["UPDATE_PASSWORD", "CONFIGURE_TOTP"],
-            "credentials": [{"type": "password", "value": password, "temporary": True}],
-        }
-    ]
+    # Google creates sign-in identities on first login; no local application administrator.
+    realm["users"] = [service_account]
     values = {
         "APP_DOMAIN": domain,
         "ACME_EMAIL": email,
@@ -72,8 +59,9 @@ def prepare(domain, email, account, admin_email, container, output):
         "DATABASE_PASSWORD": secrets.token_hex(32),
         "KEYCLOAK_DB_PASSWORD": secrets.token_hex(32),
         "KEYCLOAK_ADMIN_PASSWORD": secrets.token_hex(32),
-        "BOOTSTRAP_ADMIN_SUBJECT": subject,
         "KEYCLOAK_PROVISIONER_SECRET": provisioner_secret,
+        "GOOGLE_CLIENT_ID": "",
+        "GOOGLE_CLIENT_SECRET": "",
     }
     os.umask(0o077)
     output.mkdir(parents=True, mode=0o700)
@@ -87,8 +75,8 @@ def prepare(domain, email, account, admin_email, container, output):
         "".join(f"{key}={value}\n" for key, value in values.items())
     )
     (output / "first-login.txt").write_text(
-        f"URL: {origin}\nUsername: archive-admin\nTemporary password: {password}\n"
-        "First login requires a password change and authenticator setup.\n"
+        f"URL: {origin}\nSign in with Google as sagar.parker@sjsu.edu.\n"
+        "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in deploy.env before starting Keycloak.\n"
     )
     (output / "azure-cors.json").write_text(
         json.dumps(
@@ -116,7 +104,7 @@ def main():
     parser.add_argument("--domain", required=True)
     parser.add_argument("--email", required=True, help="Certificate renewal contact")
     parser.add_argument("--account", required=True)
-    parser.add_argument("--admin-email", required=True)
+    parser.add_argument("--admin-email", default="sagar.parker@sjsu.edu", help="Legacy argument; application admin is fixed to sagar.parker@sjsu.edu")
     parser.add_argument("--container", default="mediamesh")
     args = parser.parse_args()
     try:

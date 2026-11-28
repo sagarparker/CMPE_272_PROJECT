@@ -5,8 +5,8 @@ Authorization Code + PKCE and keeps tokens only in memory. All application
 requests go to `/api` on the same origin. Media bytes go directly to the
 signed Azure Blob URL; internal Python endpoints are never called by the browser.
 
-The portal provides an unassigned-user screen, role-aware navigation, admin
-role assignment, uploads with progress/status polling, metadata editing,
+The portal provides Google sign-in, uploader/researcher role selection, pending
+approval status, role-aware navigation, admin request approval and role assignment, uploads with progress/status polling, metadata editing,
 filtered semantic search, video timestamps, related media, and signed
 preview/download access. A 30-minute activity timer signs idle users out;
 server/provider session limits remain authoritative.
@@ -28,17 +28,22 @@ npm test
 npm run build
 ```
 
-Run the full stack through `../infra/start.sh`, then run browser acceptance:
+Browser component tests stub the OAuth boundary and API calls while running the
+production React bundle. They run without Google credentials or a running stack:
 
 ```bash
 npx playwright install chromium
 npm run test:e2e
 ```
 
-The test uses the four public local demo accounts and synthetic image/video
-fixtures. It grants and removes roles, creates test catalog records, and
-requires the embedding service to be ready (CI can select the CLIP baseline). It targets localhost by default;
-`APP_URL` can select another isolated demo instance.
+The full-stack acceptance test requires live Google sessions. Against an isolated
+stack, sign in once per test identity and save Playwright `storageState` JSON as
+`admin.json`, `employee.json`, `uploader.json`, and `researcher.json` in a private
+directory. The admin must use `sagar.parker@sjsu.edu`; employee starts unassigned.
+Set `GOOGLE_AUTH_STATE_DIR` to that directory and `APP_URL` to the stack URL when
+running the tests. These session files are credentials and must stay outside the
+repository. Full-stack acceptance and the opt-in reliability demo skip without
+these sessions; backend JWT, approval and authorization tests remain automated.
 
 ## Shared theme and sign-in illustration
 
@@ -73,3 +78,9 @@ contains the component and sequence Mermaid diagrams.
 
 The OpenRouter credential stays in server-side environment configuration. Vite
 never receives it. The browser's Keycloak access token is a separate credential.
+
+The Google sign-in button uses the unmodified, pre-approved light rectangular
+PNG from [Google's branding assets](https://developers.google.com/identity/branding-guidelines#download-brand-icons).
+`public/google-signin-light.png` is the 4x Android/Web asset, displayed at its
+standard size to preserve the official logo, typography, and spacing. Both the
+portal and Keycloak theme use this asset.

@@ -21,18 +21,18 @@ real OIDC login, Azurite Blob Storage, Python indexing, and the React portal.
 ## Configuration
 
 `application.yml` maps environment variables for JDBC, issuer/JWKS/audience,
-bootstrap admin subject, ML base URL, and Azure storage account/container.
+Google sign-in validation, ML base URL, and Azure storage account/container.
 Cloud access uses the VM managed identity. Local Compose supplies an explicitly
 local-only Azurite endpoint and the fixed public emulator credential.
 
 The configured OIDC provider must issue an API audience, stable subject, and
 `sid` session identifier. Users are mapped by `(issuer, subject)` to an internal
-UUID. The explicitly configured `BOOTSTRAP_ADMIN_SUBJECT` gets ADMIN once and is the
-primary administrator: it always keeps ADMIN and is the only account that may
-grant, remove or create ADMIN. `POST /api/admin/users` (any ADMIN) creates a
-Keycloak identity with a temporary password plus required password-change and
-TOTP actions, records the user and its single role, and returns the password
-once. Other admins may create only RESEARCHER or UPLOADER accounts.
+UUID. The API requires Google broker sign-in with a verified email. The account
+`sagar.parker@sjsu.edu` receives the sole ADMIN role on first Google sign-in.
+Users submit `POST /api/me/access-request` with uploader/researcher roles; the
+administrator lists `/api/admin/access-requests` and posts an approval or rejection
+to `/api/admin/access-requests/{id}/decision`. No extra administrators or password
+accounts can be created. See [account setup](../docs/ACCOUNT_SETUP.md).
 
 Roles are loaded from the DB per request. API sessions track idle/absolute
 limits (30 minutes / 8 hours); `/api/logout` revokes the session. Issued Blob SAS

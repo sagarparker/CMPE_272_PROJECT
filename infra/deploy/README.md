@@ -96,7 +96,7 @@ the supplied project is `mathewpius19/Media-Mesh`. Do not push to the wrong repo
 python3 infra/deploy/prepare.py \
   --domain archive.your-domain.org \
   --email operations@your-domain.org \
-  --admin-email owner@your-domain.org \
+  --admin-email sagar.parker@sjsu.edu \
   --account YOURLOWERCASESTORAGEACCOUNT \
   --container mediamesh
 # Before starting, add ML_OPENROUTER_API_KEY to the private runtime/deploy.env.
@@ -136,10 +136,11 @@ curl --fail --connect-timeout 3 --max-time 10 https://YOUR_HOSTNAME/auth/realms/
 
 Discovery must advertise exactly your HTTPS issuer. Anonymous `/api/me` returns
 401; `/actuator/prometheus` and `/auth/admin/` return 404 publicly. Read the initial
-`archive-admin` login from `runtime/first-login.txt` privately. Change its password
-and configure an authenticator at first login. Remove the temporary password file
-and old credential from the realm import after successful rotation; retain the
-same subject UUID and live Keycloak database.
+Google sign-in configuration from [account setup](../../docs/ACCOUNT_SETUP.md).
+Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `runtime/deploy.env`, register
+the hosted broker redirect URI, and sign in as `sagar.parker@sjsu.edu`. The
+application creates its sole administrator from that verified Google login.
+There is no temporary application password or additional administrator creation.
 
 Keycloak identity administration remains internal. Authenticate its CLI (password
 prompt; use the generated private management password):
@@ -149,14 +150,11 @@ prompt; use the generated private management password):
   --server http://localhost:8080/auth --realm master --user deployment-admin
 ```
 
-Staff accounts are created in MediaMesh **Admin → Create an account**. The admin
-picks Researcher or Uploader and receives a one-time temporary password to share
-privately. At first sign-in Keycloak forces a new password and authenticator
-(TOTP) enrollment; later sign-ins use both. Only the primary administrator
-(`BOOTSTRAP_ADMIN_SUBJECT`) can create administrators or grant/remove ADMIN, and
-that account always keeps ADMIN. ADMIN does not imply either media role.
+Application access now follows the Google request/approval flow. Only
+`sagar.parker@sjsu.edu` receives ADMIN. See [account setup](../../docs/ACCOUNT_SETUP.md)
+for existing-realm migration and role approval.
 
-The backend creates identities through the `mediamesh-provisioner` client, whose
+The backend deletes retired sign-in identities through the `mediamesh-provisioner` client, whose
 service account holds only `realm-management/manage-users` and the
 `kc-admin-api` scope that Keycloak 26.8.2+ requires for Admin API tokens.
 `prepare.py` adds it to fresh realms. For a realm created before this change,

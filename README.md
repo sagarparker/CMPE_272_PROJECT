@@ -21,11 +21,12 @@ Open **http://localhost:8080**. First start downloads EmbeddingGemma 2 into its
 Docker volume. Captions and verification use OpenRouter, so no local vision-model
 download is needed. Track readiness with `./infra/manage.sh logs gemma-embed ml-api ml-worker`.
 
-Local demo accounts: `admin`, `uploader`, `researcher`, `employee`; all use
-`local-demo-only`. These are public local fixtures. Only `admin` gets a role
-automatically. Sign in as the other users once so they appear in the Admin
-screen, then assign `UPLOADER` and `RESEARCHER`. Use separate browser profiles
-or sign out between accounts. Admin does not implicitly receive other roles.
+Configure `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env` using the
+[Google OAuth setup](docs/ACCOUNT_SETUP.md), then select **Sign in with Google**.
+Users choose uploader, researcher, or both and wait for approval. Sign in as
+`sagar.parker@sjsu.edu` to open the sole administrator account and review requests.
+Admin does not implicitly receive upload or search access. Legacy local password
+fixtures are no longer accepted by the API.
 
 For a populated nature showcase, run `./infra/seed-demo.sh` using Node.js 24
 after starting the stack. It loads **500 photos and two videos** across wildlife,
@@ -142,13 +143,13 @@ unchanged does **not** reproduce the local hybrid search path. See the
 
 | Action | ADMIN | UPLOADER | RESEARCHER | Signed-in unassigned |
 |---|:---:|:---:|:---:|:---:|
-| Create accounts, assign roles, delete users | Yes (administrator accounts: primary admin only) | No | No | No |
+| Approve access, assign roles, delete users | Yes (sole designated admin) | No | No | No |
 | Upload photos/video | Only with UPLOADER role | Yes | No | No |
 | Edit own asset metadata | Only with UPLOADER role | Yes | No | No |
 | Search media | Only with RESEARCHER role | No | Yes | No |
 | Preview / download | Only with RESEARCHER role | No | Yes | No |
 
-Roles can be combined. There is no self-registration: an administrator creates each account with one role and a one-time temporary password; the first sign-in forces a new password and authenticator (TOTP) enrollment. The configured bootstrap subject is the primary administrator; only it can create, grant, remove or delete administrators. See [account setup](docs/ACCOUNT_SETUP.md).
+Roles can be combined. Users sign in with Google and request uploader, researcher, or both roles. Requests appear in the admin portal and grant access only after approval. The sole administrator is `sagar.parker@sjsu.edu`, bootstrapped on verified Google sign-in. See [account setup](docs/ACCOUNT_SETUP.md).
 
 ## Core workflows
 
@@ -163,36 +164,34 @@ sequenceDiagram
     participant DB as PostgreSQL
     Employee->>UI: Open MediaMesh
     UI->>IdP: OIDC Authorization Code + PKCE
-    IdP->>Employee: Password + authenticator code
+    IdP->>Employee: Google sign-in
     IdP-->>UI: Authenticated session / tokens
     UI->>API: GET /api/me with access JWT
     API->>API: Validate signature, issuer, audience, expiry
-    API->>DB: Match (issuer, subject) to the admin-created user, read roles
+    API->>DB: Upsert Google identity, read approved roles
     DB-->>API: Current roles
     API-->>UI: User profile + roles
     Note over UI,API: Expired/invalid access token returns 401, renew or reauthenticate
 ```
 
-### 2. Admin creates accounts and assigns access
+### 2. User requests access and admin approves
 
 ```mermaid
 sequenceDiagram
+    actor User
     actor Admin
     participant UI as React Portal
     participant API as Spring Boot
-    participant IdP as Keycloak
     participant DB as PostgreSQL
-    Admin->>UI: Create account (username, email, role)
-    UI->>API: POST /api/admin/users
-    API->>API: Verify JWT + ADMIN (ADMIN role: primary admin only)
-    API->>IdP: Create user, temporary password, require password change + TOTP
-    API->>DB: Record user, role and audit event
-    API-->>UI: Temporary password, shown once
-    Admin->>UI: Change roles or delete a user
-    UI->>API: PUT roles / DELETE user
-    API->>DB: Replace roles or remove roles and sessions, audit
-    API->>IdP: Delete login (user deletion only)
-    Note over API,DB: Changes apply to the next API authorization check
+    User->>UI: Select uploader, researcher, or both
+    UI->>API: POST /api/me/access-request
+    API->>DB: Persist pending request and audit event
+    Note over User,API: Requested tools remain blocked until approval
+    Admin->>UI: Review pending requests
+    UI->>API: POST /api/admin/access-requests/{id}/decision
+    API->>API: Verify sole ADMIN access
+    API->>DB: Approve requested roles or reject; audit decision
+    Note over API,DB: Approved roles apply on the next API request
 ```
 
 ### 3. Uploader adds wildlife footage
@@ -389,7 +388,7 @@ Start with the [shared team overview and API contracts](docs/team/00_TEAM_OVERVI
 
 - Keycloak OIDC with Authorization Code + PKCE; JWT signature, issuer, audience
   and timestamp checks; current roles loaded from PostgreSQL on every request.
-- Public local demo identities; one explicit bootstrap (primary) admin subject.
+- Google sign-in, approval-based roles, and one verified Google administrator.
   In the cloud, accounts are created by an admin with a temporary password and
   mandatory TOTP enrollment. API
   sessions enforce 30-minute request-inactivity and 8-hour absolute limits;

@@ -69,7 +69,7 @@ class SearchReliabilityHttpTest {
         responseBody.set("{\"matches\":[]}");
         breakers.circuitBreaker("mlSearch").reset();
         var jwt=Jwt.withTokenValue("researcher").header("alg","RS256").subject("researcher").build();
-        var user=new IdentityService.User(UUID.randomUUID(),"test@example.org","Test",List.of("RESEARCHER"),false);
+        var user=new IdentityService.User(UUID.randomUUID(),"test@example.org","Test",List.of("RESEARCHER"),false,List.of(),"NONE");
         when(decoder.decode(anyString())).thenReturn(jwt);when(identities.authenticate(any())).thenReturn(user);
         when(identities.user(any())).thenReturn(user);
         when(assets.eligible(any())).thenReturn(List.of(UUID.randomUUID()));
@@ -85,7 +85,7 @@ class SearchReliabilityHttpTest {
         search().andExpect(status().isOk()).andExpect(jsonPath("$.results").isEmpty());
         mvc.perform(post("/api/search").contentType("application/json").content("{}")).andExpect(status().isUnauthorized());
         mvc.perform(post("/api/search").header("Authorization","Bearer researcher").contentType("application/json").content("{}")).andExpect(status().isBadRequest());
-        var user=new IdentityService.User(UUID.randomUUID(),"","",List.of(),false);
+        var user=new IdentityService.User(UUID.randomUUID(),"","",List.of(),false,List.of(),"NONE");
         when(identities.authenticate(any())).thenReturn(user);
         search().andExpect(status().isForbidden());
         assertThat(count("mediamesh.search.requests")-before).isEqualTo(1);

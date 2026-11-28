@@ -25,7 +25,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import static org.mockito.Mockito.*;
 
-@SpringBootTest(properties={"spring.flyway.target=200","mediamesh.security.bootstrap-subject=admin"})
+@SpringBootTest(properties={"spring.flyway.target=200","spring.main.banner-mode=off"})
 @AutoConfigureMockMvc
 @Testcontainers
 class ApplicationSecurityTest {
@@ -63,13 +63,18 @@ class ApplicationSecurityTest {
         jdbc.execute("ALTER TABLE assets ADD COLUMN IF NOT EXISTS playback_key TEXT");
         jdbc.execute("ALTER TABLE assets ADD COLUMN IF NOT EXISTS generated_description TEXT");
         jdbc.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ");
-        jdbc.execute("TRUNCATE api_sessions,audit_events,user_roles,users,assets CASCADE");}
+        if (!Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='primary_admin')", Boolean.class))) {
+            new org.springframework.jdbc.datasource.init.ResourceDatabasePopulator(
+                new org.springframework.core.io.ClassPathResource("db/migration/V407__google_access_approval.sql"))
+                .execute(Objects.requireNonNull(jdbc.getDataSource()));
+        }
+        jdbc.execute("TRUNCATE access_request_roles,access_requests,api_sessions,audit_events,user_roles,users,assets CASCADE");}
     @AfterAll static void close(){jwks.stop(0);}
     String token(String subject) throws Exception {return token(subject,"mediamesh-api",new Date(System.currentTimeMillis()+900000));}
     String token(String subject,String audience,Date expiry) throws Exception {
         var claims=new JWTClaimsSet.Builder().issuer("https://identity.test/realms/mediamesh").subject(subject)
             .audience(audience).issueTime(new Date()).expirationTime(expiry).claim("sid","session-"+subject)
-            .claim("auth_time",System.currentTimeMillis()/1000).claim("name",subject).claim("email",subject+"@example.org").build();
+            .claim("auth_time",System.currentTimeMillis()/1000).claim("name",subject).claim("identity_provider","google").claim("email_verified",true).claim("email",subject.equals("admin") ? "sagar.parker@sjsu.edu" : subject+"@example.org").build();
         var jwt=new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("test").build(),claims);
         jwt.sign(new RSASSASigner(key));return jwt.serialize();
     }
@@ -166,50 +171,49 @@ class ApplicationSecurityTest {
         for(String id:List.of(employeeId,adminId))
             mvc.perform(put("/api/admin/users/"+id+"/roles").header("Authorization","Bearer "+employee).contentType("application/json").content("{\"roles\":[\"ADMIN\"]}")).andExpect(status().isForbidden());
         mvc.perform(put("/api/admin/users/"+UUID.randomUUID()+"/roles").header("Authorization","Bearer "+admin).contentType("application/json").content("{\"roles\":[]}")).andExpect(status().isNotFound());
-        mvc.perform(put("/api/admin/users/"+adminId+"/roles").header("Authorization","Bearer "+admin).contentType("application/json").content("{\"roles\":[]}")).andExpect(status().isConflict());
+        mvc.perform(put("/api/admin/users/"+adminId+"/roles").header("Authorization","Bearer "+admin).contentType("application/json").content("{\"roles\":[]}")).andExpect(status().isForbidden());
     }
-    String account(String admin,String username,String role) throws Exception {
-        return "{\"username\":\""+username+"\",\"email\":\""+username+"@example.org\",\"firstName\":\"New\",\"lastName\":\"Person\",\"role\":\""+role+"\"}";
+    @Test void googleRequestsStayBlockedUntilAdminApprovalAndCanCombineRoles() throws Exception {
+        String admin=token("admin"),employee=token("employee");userId(admin);String id=userId(employee);
+        mvc.perform(post("/api/me/access-request").header("Authorization","Bearer "+employee).contentType("application/json").content("{\"roles\":[\"UPLOADER\",\"RESEARCHER\"]}"))
+            .andExpect(status().isCreated()).andExpect(jsonPath("$.requestStatus").value("PENDING")).andExpect(jsonPath("$.roles").isEmpty());
+        mvc.perform(get("/api/assets").header("Authorization","Bearer "+employee)).andExpect(status().isForbidden());
+        mvc.perform(post("/api/search").header("Authorization","Bearer "+employee).contentType("application/json").content("{\"query\":\"tiger\"}")).andExpect(status().isForbidden());
+        mvc.perform(get("/api/admin/access-requests").header("Authorization","Bearer "+employee)).andExpect(status().isForbidden());
+        var pending=mvc.perform(get("/api/admin/access-requests").header("Authorization","Bearer "+admin)).andExpect(status().isOk()).andReturn();
+        String request=json.readTree(pending.getResponse().getContentAsString()).get(0).get("id").asText();
+        mvc.perform(post("/api/me/access-request").header("Authorization","Bearer "+employee).contentType("application/json").content("{\"roles\":[\"UPLOADER\"]}")).andExpect(status().isConflict());
+        decision(employee,request,true).andExpect(status().isForbidden());
+        decision(admin,request,true).andExpect(status().isNoContent());
+        decision(admin,request,true).andExpect(status().isConflict());
+        mvc.perform(get("/api/me").header("Authorization","Bearer "+employee)).andExpect(jsonPath("$.roles.length()").value(2)).andExpect(jsonPath("$.requestStatus").value("APPROVED"));
+        mvc.perform(get("/api/assets").header("Authorization","Bearer "+employee)).andExpect(status().isOk());
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_events WHERE action='APPROVE_ACCESS'",Integer.class)).isOne();
     }
-    org.springframework.test.web.servlet.ResultActions create(String bearer,String username,String role) throws Exception {
-        return mvc.perform(post("/api/admin/users").header("Authorization","Bearer "+bearer).contentType("application/json").content(account(bearer,username,role)));
+    org.springframework.test.web.servlet.ResultActions decision(String bearer,String request,boolean approve) throws Exception {
+        return mvc.perform(post("/api/admin/access-requests/"+request+"/decision").header("Authorization","Bearer "+bearer).contentType("application/json").content("{\"approve\":"+approve+"}"));
     }
-    @Test void adminCreatedAccountsGetATemporaryPasswordAndTheirRoleOnFirstSignIn() throws Exception {
-        String admin=token("admin"),employee=token("employee");userId(admin);userId(employee);
-        when(keycloak.create(eq("new.researcher"),anyString(),anyString(),anyString(),anyString())).thenReturn("researcher-subject");
-        mvc.perform(get("/api/me").header("Authorization","Bearer "+admin)).andExpect(jsonPath("$.primaryAdmin").value(true));
-        create(employee,"blocked.user","RESEARCHER").andExpect(status().isForbidden());
-        create(admin,"Bad Name","RESEARCHER").andExpect(status().isBadRequest());
-        var body=create(admin,"new.researcher","RESEARCHER").andExpect(status().isCreated())
-            .andExpect(jsonPath("$.user.roles[0]").value("RESEARCHER")).andReturn().getResponse().getContentAsString();
-        String password=json.readTree(body).get("temporaryPassword").asText();
-        org.assertj.core.api.Assertions.assertThat(password).hasSize(20);
-        verify(keycloak).create("new.researcher","new.researcher@example.org","New","Person",password);
-        String created=json.readTree(body).get("user").get("id").asText();
-        org.assertj.core.api.Assertions.assertThat(userId(token("researcher-subject"))).isEqualTo(created);
-        mvc.perform(get("/api/me").header("Authorization","Bearer "+token("researcher-subject"))).andExpect(jsonPath("$.roles[0]").value("RESEARCHER")).andExpect(jsonPath("$.primaryAdmin").value(false));
-        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_events WHERE action='CREATE_ACCOUNT'",Integer.class)).isEqualTo(1);
+    @Test void rejectedRequestsCanBeResubmittedAndAdminCannotBeRequestedOrGranted() throws Exception {
+        String admin=token("admin"),employee=token("employee");userId(admin);String id=userId(employee);
+        for(String roles:List.of("[]","[\"ADMIN\"]"))
+            mvc.perform(post("/api/me/access-request").header("Authorization","Bearer "+employee).contentType("application/json").content("{\"roles\":"+roles+"}")).andExpect(status().isBadRequest());
+        mvc.perform(put("/api/admin/users/"+id+"/roles").header("Authorization","Bearer "+admin).contentType("application/json").content("{\"roles\":[\"ADMIN\"]}")).andExpect(status().isForbidden());
+        for(int i=0;i<2;i++) {
+            mvc.perform(post("/api/me/access-request").header("Authorization","Bearer "+employee).contentType("application/json").content("{\"roles\":[\"RESEARCHER\"]}")).andExpect(status().isCreated());
+            String request=jdbc.queryForObject("SELECT id::text FROM access_requests WHERE status='PENDING'",String.class);
+            decision(admin,request,false).andExpect(status().isNoContent());
+            mvc.perform(get("/api/me").header("Authorization","Bearer "+employee)).andExpect(jsonPath("$.roles").isEmpty()).andExpect(jsonPath("$.requestStatus").value("REJECTED"));
+        }
     }
-    @Test void onlyThePrimaryAdministratorManagesAdministratorAccess() throws Exception {
-        String admin=token("admin"),employee=token("employee");userId(admin);String employeeId=userId(employee);
-        when(keycloak.create(eq("second.admin"),anyString(),anyString(),anyString(),anyString())).thenReturn("second-admin");
-        when(keycloak.create(eq("new.uploader"),anyString(),anyString(),anyString(),anyString())).thenReturn("new-uploader");
-        var body=create(admin,"second.admin","ADMIN").andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
-        String secondId=json.readTree(body).get("user").get("id").asText();
-        String second=token("second-admin");
-        create(second,"third.admin","ADMIN").andExpect(status().isForbidden());
-        create(second,"new.uploader","UPLOADER").andExpect(status().isCreated());
-        mvc.perform(put("/api/admin/users/"+employeeId+"/roles").header("Authorization","Bearer "+second).contentType("application/json").content("{\"roles\":[\"ADMIN\"]}")).andExpect(status().isForbidden());
-        mvc.perform(put("/api/admin/users/"+employeeId+"/roles").header("Authorization","Bearer "+second).contentType("application/json").content("{\"roles\":[\"RESEARCHER\"]}")).andExpect(status().isOk());
-        mvc.perform(put("/api/admin/users/"+secondId+"/roles").header("Authorization","Bearer "+second).contentType("application/json").content("{\"roles\":[]}")).andExpect(status().isForbidden());
-        mvc.perform(put("/api/admin/users/"+secondId+"/roles").header("Authorization","Bearer "+admin).contentType("application/json").content("{\"roles\":[]}")).andExpect(status().isOk());
-        create(second,"another.user","RESEARCHER").andExpect(status().isForbidden());
-    }
-    @Test void failedDatabaseRecordRemovesTheNewSignInIdentity() throws Exception {
-        String admin=token("admin");userId(admin);
-        when(keycloak.create(eq("duplicate"),anyString(),anyString(),anyString(),anyString())).thenReturn("admin");
-        org.assertj.core.api.Assertions.assertThatThrownBy(()->create(admin,"duplicate","UPLOADER"));
-        verify(keycloak).delete("admin");
+    @Test void passwordSignInAndUnverifiedGoogleEmailAreRejectedEvenForAdmin() throws Exception {
+        for(String claim:List.of("identity_provider","email_verified")) {
+            var original=SignedJWT.parse(token("admin")).getJWTClaimsSet();
+            var claims=new JWTClaimsSet.Builder(original).claim(claim,claim.equals("email_verified")?false:"other").build();
+            var jwt=new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("test").build(),claims);
+            jwt.sign(new RSASSASigner(key));
+            mvc.perform(get("/api/me").header("Authorization","Bearer "+jwt.serialize())).andExpect(status().isUnauthorized());
+        }
+        mvc.perform(get("/api/me").header("Authorization","Bearer "+token("admin"))).andExpect(jsonPath("$.primaryAdmin").value(true));
     }
     @Test void videoPreviewsUseThePlaybackCopyButDownloadsUseTheOriginal() throws Exception {
         String owner=token("owner"),researcher=token("researcher");
@@ -247,19 +251,6 @@ class ApplicationSecurityTest {
         org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject("SELECT count(*) FROM user_roles WHERE user_id=?::uuid",Integer.class,uploaderId)).isZero();
         org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject("SELECT count(*) FROM assets WHERE id=?",Integer.class,asset)).isOne();
         org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_events WHERE action='DELETE_USER'",Integer.class)).isOne();
-    }
-    @Test void onlyThePrimaryAdministratorDeletesAdministrators() throws Exception {
-        String admin=token("admin"),employee=token("employee");userId(admin);String employeeId=userId(employee);
-        when(keycloak.create(eq("second.admin"),anyString(),anyString(),anyString(),anyString())).thenReturn("second-admin");
-        when(keycloak.create(eq("third.admin"),anyString(),anyString(),anyString(),anyString())).thenReturn("third-admin");
-        String primaryId=userId(admin);
-        create(admin,"second.admin","ADMIN").andExpect(status().isCreated());
-        String thirdId=json.readTree(create(admin,"third.admin","ADMIN").andReturn().getResponse().getContentAsString()).get("user").get("id").asText();
-        String second=token("second-admin");
-        deleteUser(second,primaryId).andExpect(status().isConflict());
-        deleteUser(second,thirdId).andExpect(status().isForbidden());
-        deleteUser(second,employeeId).andExpect(status().isNoContent());
-        deleteUser(admin,thirdId).andExpect(status().isNoContent());
     }
     @Test void identityServiceFailureLeavesTheUserUntouched() throws Exception {
         String admin=token("admin"),employee=token("employee");userId(admin);String employeeId=userId(employee);

@@ -105,8 +105,12 @@ services:
       retries: 30
   keycloak:
     image: quay.io/keycloak/keycloak:26.0.7
-    command: [start-dev, --import-realm]
+    # Local H2 setup: avoid duplicate persistent-session writes on login retries.
+    # Accounts remain on disk; login sessions end when Keycloak restarts.
+    command: [start-dev, --import-realm, --features-disabled=persistent-user-sessions]
     environment:
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       KC_HTTP_RELATIVE_PATH: /auth
       KC_HOSTNAME: http://localhost:8080/auth
       KC_PROXY_HEADERS: xforwarded
@@ -144,7 +148,6 @@ services:
       DATABASE_PASSWORD: local-development-only
       OIDC_ISSUER: http://localhost:8080/auth/realms/mediamesh
       OIDC_JWKS: http://keycloak:8080/auth/realms/mediamesh/protocol/openid-connect/certs
-      BOOTSTRAP_ADMIN_SUBJECT: 00000000-0000-0000-0000-000000000001
       KEYCLOAK_URL: http://keycloak:8080/auth
       KEYCLOAK_PROVISIONER_SECRET: local-provisioner-only
       AZURE_EMULATOR_ENDPOINT: http://azurite:10000/devstoreaccount1

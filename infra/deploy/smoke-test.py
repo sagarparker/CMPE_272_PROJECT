@@ -118,8 +118,7 @@ with tempfile.TemporaryDirectory(prefix="mediamesh-release-") as directory:
             timeout=5,
         ) as response:
             users = json.load(response)
-        assert len(users) == 1 and users[0]["username"] == "archive-admin"
-        assert set(users[0]["requiredActions"]) == {"UPDATE_PASSWORD", "CONFIGURE_TOTP"}
+        assert all(user.get("serviceAccountClientId") for user in users)
         run(compose + ["stop", "keycloak"])
         for database in ["mediamesh", "keycloak"]:
             backup = tmp / (database + ".dump")
@@ -172,15 +171,15 @@ with tempfile.TemporaryDirectory(prefix="mediamesh-release-") as directory:
                 "-d",
                 "keycloak",
                 "-Atc",
-                "SELECT count(*) FROM user_entity WHERE username='archive-admin'",
+                "SELECT count(*) FROM user_entity WHERE username='service-account-mediamesh-provisioner'",
             ]
         ).strip()
         assert restored == "1"
         print(
-            "PASS: both database dumps restore successfully and preserve the administrator"
+            "PASS: both database dumps restore successfully and preserve the provisioner service account"
         )
         print(
-            "PASS: production-mode Keycloak + PostgreSQL startup, HTTPS issuer, fresh admin, required password rotation and OTP; no demo identities"
+            "PASS: production-mode Keycloak + PostgreSQL startup, HTTPS issuer, Google-ready realm; no local application users"
         )
     finally:
         run(compose + ["down", "-v"])
