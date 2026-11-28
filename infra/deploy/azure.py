@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Repeatable Azure VM provisioning and Compose deployment. Uses az, ssh and public HTTPS Git."""
 import argparse
-import ipaddress
 import json
 import re
 import shlex
@@ -54,7 +53,7 @@ CONFIG_KEYS = {
     'location': 'AZURE_LOCATION', 'vm_name': 'AZURE_VM_NAME', 'dns_label': 'AZURE_DNS_LABEL',
     'storage_account': 'AZURE_STORAGE_ACCOUNT', 'container': 'AZURE_STORAGE_CONTAINER',
     'admin_email': 'ADMIN_EMAIL', 'certificate_email': 'ACME_EMAIL',
-    'ssh_cidr': 'AZURE_SSH_CIDR', 'ssh_key': 'AZURE_SSH_KEY',
+    'ssh_key': 'AZURE_SSH_KEY',
     'ssh_user': 'AZURE_SSH_USER', 'vm_size': 'AZURE_VM_SIZE',
 }
 
@@ -66,7 +65,7 @@ def load_config(path):
                          'ssh_user': 'azureuser', 'vm_size': 'Standard_B2as_v2', 'container': 'mediamesh'}.items():
         c.setdefault(key, default)
     required = ['subscription', 'resource_group', 'location', 'vm_name', 'dns_label',
-                'storage_account', 'admin_email', 'certificate_email', 'ssh_cidr', 'ssh_key']
+                'storage_account', 'admin_email', 'certificate_email', 'ssh_key']
     for key in required:
         if not c.get(key):
             raise ValueError(f'Missing deployment env setting: {CONFIG_KEYS[key]}')
@@ -75,9 +74,6 @@ def load_config(path):
             raise ValueError(f'Invalid {CONFIG_KEYS[key]}')
     if not re.fullmatch(r'[a-z0-9]{3,24}', c['storage_account']):
         raise ValueError('Storage account must be 3–24 lowercase letters/digits')
-    network = ipaddress.ip_network(c['ssh_cidr'], strict=False)
-    if network.version != 4 or network.prefixlen != 32:
-        raise ValueError('AZURE_SSH_CIDR must be your public IPv4 address followed by /32')
     c['ssh_key'] = str(Path(c['ssh_key']).expanduser().resolve())
     if not re.fullmatch(r'[a-z_][a-z0-9_-]*', c['ssh_user']):
         raise ValueError('Invalid SSH username')
@@ -163,7 +159,7 @@ def provision(c):
     save_state(c)
     common = ['--resource-group', c['resource_group'], *scope]
     az('network', 'nsg', 'create', '--name', 'mediamesh-nsg', *common)
-    for priority, name, port, source in [(100, 'SSH', '22', c['ssh_cidr']),
+    for priority, name, port, source in [(100, 'SSH', '22', '*'),
                                          (110, 'HTTP', '80', '*'), (120, 'HTTPS', '443', '*')]:
         az('network', 'nsg', 'rule', 'create', '--nsg-name', 'mediamesh-nsg',
            '--name', name, '--priority', str(priority), '--access', 'Allow',
@@ -173,7 +169,7 @@ def provision(c):
     if not any(v['name'] == c['vm_name'] for v in vms):
         az('vm', 'create', '--name', c['vm_name'], '--image', 'Ubuntu2404',
            '--size', c['vm_size'], '--admin-username', c['ssh_user'],
-           '--ssh-key-values', Path(c['ssh_key'] + '.pub').read_text().strip(),
+           '--authentication-type', 'ssh', '--ssh-key-values', Path(c['ssh_key'] + '.pub').read_text().strip(),
            '--assign-identity', '--nsg', 'mediamesh-nsg', '--public-ip-sku', 'Standard',
            '--public-ip-address-allocation', 'Static', '--public-ip-address-dns-name', c['dns_label'],
            '--storage-sku', 'StandardSSD_LRS', '--os-disk-size-gb', '100', *common)

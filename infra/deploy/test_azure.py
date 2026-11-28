@@ -17,18 +17,41 @@ class DeploymentGuards(unittest.TestCase):
         values = {'AZURE_SUBSCRIPTION': 'student', 'AZURE_RESOURCE_GROUP': 'rg-test',
                   'AZURE_VM_NAME': 'vm-test', 'AZURE_DNS_LABEL': 'mediamesh-test',
                   'AZURE_STORAGE_ACCOUNT': 'mediameshtest', 'ADMIN_EMAIL': 'a@example.com',
-                  'ACME_EMAIL': 'a@example.com', 'AZURE_SSH_CIDR': '192.0.2.1/32'}
+                  'ACME_EMAIL': 'a@example.com'}
         path = Path(folder) / '.env'
         path.write_text(''.join(f'{k}={v}\n' for k, v in values.items()))
         return path, values
 
-    def test_public_ssh_is_rejected(self):
+    def test_config_does_not_require_ip_restriction(self):
         with tempfile.TemporaryDirectory() as folder:
-            path, values = self.config(folder)
-            values['AZURE_SSH_CIDR'] = '0.0.0.0/0'
-            path.write_text(''.join(f'{k}={v}\n' for k, v in values.items()))
-            with self.assertRaisesRegex(ValueError, 'public IPv4'):
-                module.load_config(path)
+            path, _ = self.config(folder)
+            self.assertNotIn('ssh_cidr', module.load_config(path))
+
+    def test_provision_opens_ssh_and_requires_key_authentication(self):
+        with tempfile.TemporaryDirectory() as folder:
+            key = Path(folder) / 'key'
+            key.touch()
+            Path(str(key) + '.pub').write_text('ssh-ed25519 test-key')
+            def azure(*args):
+                if args[:2] == ('account', 'show'):
+                    return {'id': 'subscription'}
+                if args[:2] == ('group', 'exists'):
+                    return False
+                if args[:2] == ('vm', 'list'):
+                    return []
+                if args[:2] == ('vm', 'create'):
+                    raise RuntimeError('stop before resource creation')
+            config = dict(subscription='subscription', ssh_key=str(key), resource_group='rg-test',
+                          location='swedencentral', vm_name='vm-test', vm_size='Standard_B2as_v2',
+                          ssh_user='azureuser', dns_label='mediamesh-test')
+            with patch.object(module, 'STATE', Path(folder) / 'state.json'), patch.object(module, 'az', side_effect=azure) as calls:
+                with self.assertRaisesRegex(RuntimeError, 'stop before'):
+                    module.provision(config)
+            rule = next(c.args for c in calls.call_args_list if c.args[:4] == ('network', 'nsg', 'rule', 'create') and 'SSH' in c.args)
+            self.assertEqual(rule[rule.index('--source-address-prefixes') + 1], '*')
+            create = calls.call_args.args
+            self.assertEqual(create[create.index('--authentication-type') + 1], 'ssh')
+            self.assertIn('--ssh-key-values', create)
 
     def test_mismatched_vm_state_is_rejected(self):
         with tempfile.TemporaryDirectory() as folder:

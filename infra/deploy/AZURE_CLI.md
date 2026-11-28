@@ -40,7 +40,6 @@ overwriting your existing values. Set:
 | `AZURE_STORAGE_CONTAINER` | Usually `mediamesh` |
 | `ADMIN_EMAIL` | Administrator's verified Google email |
 | `ACME_EMAIL` | HTTPS certificate contact email |
-| `AZURE_SSH_CIDR` | Your public IPv4 address followed by `/32` |
 | `AZURE_SSH_KEY` | Dedicated local private key path; default `~/.ssh/mediamesh` |
 | `AZURE_SSH_USER` | Default `azureuser` |
 | `AZURE_VM_SIZE` | Default `Standard_B2as_v2` (2 vCPU / 8 GiB) |
@@ -87,7 +86,8 @@ dedicated SSH key if absent (ssh-keygen may prompt for its passphrase). For a
 passphrase-protected key, `ssh-add ~/.ssh/mediamesh` avoids repeated prompts.
 It creates a NEW VM, 100 GiB Standard SSD, static public IP, DNS hostname, NSG,
 managed identity, storage permissions, Blob CORS, versioning and seven-day soft
-delete. Only 80/443 are public; SSH is restricted to your configured IP.
+delete. Ports 80/443 serve the app and port 22 accepts SSH from any IP. The VM is
+created with SSH key authentication; access requires an authorized private key.
 It leaves your original VM and its services alone.
 
 This creates billable resources. Check regional price, student quota and available
