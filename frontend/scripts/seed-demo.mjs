@@ -1,5 +1,5 @@
 // Local demo provisioning only. Uses public fixture credentials; tokens stay in memory.
-import { chromium } from "@playwright/test";
+import { chromium, expect } from "@playwright/test";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -11,6 +11,9 @@ const base="http://localhost:8080";
 const cache=path.join(root,"ml-service/data/demo");
 const fixture=JSON.parse(await readFile(path.join(root,"infra/demo/accounts.json"),"utf8"));
 const manifest=JSON.parse(await readFile(path.join(root,"ml-service/evaluation/demo-manifest.json"),"utf8"));
+const uploaders=fixture.accounts.filter(account=>account.domain);
+const catalogPageSize=50;
+const indexingTimeout=2*60*60*1000;
 const config=JSON.parse(execFileSync("docker",["compose","config","--format","json"],{cwd:root,encoding:"utf8"}));
 if(config.name!=="mediamesh" || !config.services.keycloak.command.includes("start-dev"))
   throw new Error("Demo seeding requires the local development Compose stack");
@@ -95,8 +98,20 @@ async function api(account,method,route,data){
     await renewSession(account);
     response=await request();
   }
-  if(!response.ok()) throw new Error(`API ${method} ${route} failed (${response.status()})`);
-  return response.json();
+  try{
+    if(!response.ok()) throw new Error(`API ${method} ${route} failed (${response.status()})`);
+    return await response.json();
+  }finally{
+    await response.dispose();
+  }
+}
+async function listOwnedAssets(user){
+  const assets=[];
+  for(let offset=0;;offset+=catalogPageSize){
+    const page=await api(user,"GET",`/assets?offset=${offset}`);
+    assets.push(...page);
+    if(page.length<catalogPageSize) return assets;
+  }
 }
 const statePath=path.join(cache,"upload-state.json");
 let state;
@@ -114,27 +129,19 @@ try{
     await api(admin,"PUT",`/admin/users/${user.profile.id}/roles`,{roles:fixtureUser.roles});
     users.set(fixtureUser.username,user);
   }
-  for(const fixtureUser of fixture.accounts.filter(account=>account.domain)){
+  for(const fixtureUser of uploaders){
     const user=users.get(fixtureUser.username);
-    const owned=[];
-    for(let offset=0;;offset+=50){
-      const page=await api(user,"GET",`/assets?offset=${offset}`);owned.push(...page);if(page.length<50) break;
-    }
+    const owned=await listOwnedAssets(user);
+    const ownedById=new Map(owned.map(asset=>[asset.assetId,asset]));
     for(const item of manifest.items.filter(item=>item.domain===fixtureUser.domain)){
       const title=`${item.domain[0].toUpperCase()+item.domain.slice(1)} | ${item.title}`.slice(0,255);
       let entry=state.assets[item.id];
       if(entry && entry.sha256!==item.sha256) throw new Error(`Seed source changed: ${item.id}; review before replacing it`);
-      if(entry && entry.ownerId!==user.profile.id) entry=null;
+      let current=entry?.ownerId===user.profile.id ? ownedById.get(entry.assetId) : undefined;
+      if(!current) entry=null;
       if(!entry){
-        const existing=owned.find(asset=>asset.title===title && asset.usageNote?.includes(item.source_page));
-        if(existing) entry={assetId:existing.assetId,ownerId:user.profile.id,sha256:item.sha256};
-      }
-      let current;
-      if(entry){
-        const result=await user.page.request.get(base+`/api/assets/${entry.assetId}`,{headers:{Authorization:user.token}});
-        if(result.status()===404) entry=null;
-        else if(!result.ok()) throw new Error(`Cannot inspect saved demo asset: ${item.id}`);
-        else current=await result.json();
+        current=owned.find(asset=>asset.title===title && asset.usageNote?.includes(item.source_page));
+        if(current) entry={assetId:current.assetId,ownerId:user.profile.id,sha256:item.sha256};
       }
       const contentType=item.mediaType==="video"?"video/mp4":"image/jpeg";
       if(!entry){
@@ -149,7 +156,11 @@ try{
           headers:{...initiated.uploadHeaders,"Content-Type":contentType,"If-None-Match":"*"},
           data:await readFile(path.join(cache,item.filename)),timeout:120000,
         });
-        if(!response.ok()) throw new Error(`Blob upload failed for ${item.id} (${response.status()})`);
+        try{
+          if(!response.ok()) throw new Error(`Blob upload failed for ${item.id} (${response.status()})`);
+        }finally{
+          await response.dispose();
+        }
         await api(user,"POST",`/assets/${entry.assetId}/complete`);
       }else if(current.processingStatus==="UPLOADING"){
         // A completed PUT can safely be finalized after an interrupted seed run.
@@ -161,14 +172,21 @@ try{
       console.log(`${fixtureUser.username}: ${item.id}`);
     }
   }
-  const deadline=Date.now()+3600000;
+  const deadline=Date.now()+indexingTimeout;
   let pending=[...uploaded];
   while(pending.length){
+    const statusById=new Map();
+    for(const user of new Set(pending.map(asset=>asset.user))){
+      for(const asset of await listOwnedAssets(user)){
+        statusById.set(asset.assetId,asset.processingStatus);
+      }
+    }
     const remaining=[];
     for(const asset of pending){
-      const current=await api(asset.user,"GET",`/assets/${asset.entry.assetId}`);
-      if(current.processingStatus==="FAILED") throw new Error(`Indexing failed: ${asset.item.id}`);
-      if(current.processingStatus!=="READY") remaining.push(asset);
+      const status=statusById.get(asset.entry.assetId);
+      if(!status) throw new Error(`Demo asset disappeared: ${asset.item.id}`);
+      if(status==="FAILED") throw new Error(`Indexing failed: ${asset.item.id}`);
+      if(status!=="READY") remaining.push(asset);
     }
     console.log(`READY ${uploaded.length-remaining.length}/${uploaded.length}`);
     pending=remaining;
@@ -179,24 +197,27 @@ try{
   execFileSync("docker",["compose","run","--rm","--no-deps","-T","ml-worker",
     "python","-u","-m","mediamesh_ml.seed_enrich"],{
     cwd:root,input:JSON.stringify(uploaded.map(asset=>asset.entry.assetId)),
-    stdio:["pipe","inherit","inherit"],timeout:3600000,
+    stdio:["pipe","inherit","inherit"],timeout:indexingTimeout,
   });
   for(const asset of uploaded){
     const current=await api(asset.user,"GET",`/assets/${asset.entry.assetId}`);
     if(!current.generatedDescription?.trim()) throw new Error(`Missing visual description: ${asset.item.id}`);
   }
   const researcher=users.get("demo.researcher");
-  for(const fixtureUser of fixture.accounts.filter(account=>account.domain)){
+  for(const fixtureUser of uploaders){
     const user=users.get(fixtureUser.username);
-    const assets=await api(user,"GET","/assets");
-    const expected=uploaded.filter(asset=>asset.user===user);
-    if(assets.length!==expected.length || assets.some(asset=>asset.ownerId!==user.profile.id))
+    const assets=await listOwnedAssets(user);
+    const expectedIds=new Set(uploaded.filter(asset=>asset.user===user).map(asset=>asset.entry.assetId));
+    if(assets.some(asset=>asset.ownerId!==user.profile.id || !expectedIds.delete(asset.assetId)) || expectedIds.size)
       throw new Error(`Unexpected catalog ownership or duplicates for ${fixtureUser.username}`);
     await user.page.reload();
     await user.page.getByRole("heading",{name:"Contribute to the archive"}).waitFor();
-    await user.page.locator(".asset-row").last().waitFor();
-    if(await user.page.locator(".asset-row").count()!==expected.length)
-      throw new Error(`Uploader UI is missing demo assets: ${fixtureUser.username}`);
+    const titles=user.page.locator(".asset-row strong");
+    for(let offset=0;offset<assets.length;offset+=catalogPageSize){
+      if(offset) await user.page.getByRole("button",{name:"Next",exact:true}).click();
+      const pageTitles=assets.slice(offset,offset+catalogPageSize).map(asset=>asset.title);
+      await expect(titles).toHaveText(pageTitles);
+    }
   }
   const plants=users.get("demo.plants");
   const crossOwner=await plants.page.request.get(base+`/api/assets/${uploaded[0].entry.assetId}`,{headers:{Authorization:plants.token}});
@@ -217,15 +238,16 @@ try{
   await researcher.page.reload();
   await researcher.page.getByLabel("Describe what you need").fill("yellow sunflower");
   await researcher.page.getByRole("button",{name:"Search archive"}).click();
-  const flower=researcher.page.locator(".result").filter({hasText:"Sunflower head"});
-  await flower.getByRole("button",{name:"Preview",exact:true}).click();
+  const photo=researcher.page.locator(".result").filter({has:researcher.page.locator(".media-pill",{hasText:"Photograph"})}).first();
+  await photo.getByRole("button",{name:"Preview",exact:true}).click({timeout:45000});
   const image=researcher.page.getByRole("dialog",{name:"Media preview"}).getByRole("img");
   await image.waitFor();
   await image.evaluate(img=>img.decode());
   if(await image.evaluate(img=>img.naturalWidth)<=0) throw new Error("Demo preview did not render");
-  const report={seededAt:new Date().toISOString(),ready:uploaded.length,accounts:fixture.accounts.map(a=>({username:a.username,domain:a.domain,roles:a.roles})),domains:Object.fromEntries(fixture.accounts.filter(a=>a.domain).map(a=>[a.domain,uploaded.filter(x=>x.item.domain===a.domain).length])),searchChecks};
+  const videos=uploaded.filter(asset=>asset.item.mediaType==="video").length;
+  const report={seededAt:new Date().toISOString(),ready:uploaded.length,photos:uploaded.length-videos,videos,accounts:fixture.accounts.map(a=>({username:a.username,domain:a.domain,roles:a.roles})),domains:Object.fromEntries(uploaders.map(a=>[a.domain,uploaded.filter(x=>x.item.domain===a.domain).length])),searchChecks};
   await writeFile(path.join(cache,"seed-report.json"),JSON.stringify(report,null,2)+"\n");
-  console.log(JSON.stringify({ready:report.ready,domains:report.domains},null,2));
+  console.log(JSON.stringify({ready:report.ready,photos:report.photos,videos:report.videos,domains:report.domains},null,2));
 }finally{
   await Promise.all(contexts.map(context=>context.close()));await browser.close();
 }
