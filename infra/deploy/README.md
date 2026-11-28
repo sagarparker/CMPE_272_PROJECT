@@ -280,6 +280,26 @@ References: [Student credit terms](https://learn.microsoft.com/azure/education-h
 For the curated collection, follow [the demo transfer runbook](../../docs/AZURE_DEMO_DATA_TRANSFER.md). Its explicit cloud importer uses private credentials; the localhost seeder remains restricted to Azurite.
 
 
+## Add the demo dataset to Azure
+
+`ml-service/evaluation/demo-manifest.json` is the single dataset list for the local
+seed (`./infra/seed-demo.sh`) and Azure. On the VM, add whatever the catalog is
+missing:
+
+```bash
+sudo ./infra/deploy/seed-azure.sh
+```
+
+It runs [`seed_azure.py`](seed_azure.py) inside `ml-worker` (managed identity for
+Blob, catalog database), downloads each missing item, verifies its SHA-256, writes
+it create-only to Blob Storage under the domain's `demo.*` owner and queues an
+indexing job; the worker then embeds and captions it. Already-imported items (in
+`runtime/demo-upload-state.json`) are skipped, so re-runs only add new items.
+Wikimedia's regional caches sometimes serve a differently encoded thumbnail to the
+VM; download those items elsewhere, verify their checksums and pass the folder with
+`SEED_CACHE=/path sudo -E ./infra/deploy/seed-azure.sh`. Indexing runs at about
+3.5 photos per minute on this VM.
+
 ## Search: EmbeddingGemma 2 hybrid search
 
 Azure runs the same search as the root stack: `gemma-embed` serves EmbeddingGemma 2
