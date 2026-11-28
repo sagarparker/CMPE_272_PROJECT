@@ -30,7 +30,9 @@ def main():
     parser.add_argument("--expect-domain", required=True)
     args = parser.parse_args()
     private = ROOT / "infra/deploy/runtime"
-    env = dict(x.split("=", 1) for x in (private / "deploy.env").read_text().splitlines())
+    from vault_env import load
+
+    env = load(private / "deploy.env")  # includes Key Vault secrets when configured
     if args.expect_domain != env["APP_DOMAIN"]:
         raise ValueError("Deployment domain does not match explicit target")
     os.umask(0o077)

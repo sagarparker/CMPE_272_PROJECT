@@ -141,6 +141,37 @@ and configure an authenticator at first login. Remove the temporary password fil
 and old credential from the realm import after successful rotation; retain the
 same subject UUID and live Keycloak database.
 
+### Secrets in Azure Key Vault
+
+Deployment secrets live in Key Vault `kv-mm272-bf5064f9` (resource group
+`CMPE-272-Media-Mesh`), not in `deploy.env`. Each secret's content type is
+`env:NAME`, and `compose.sh` exports it as `NAME` at start-up through
+[`vault_env.py`](vault_env.py), using the VM's managed identity (access policy:
+secrets get/list only). Nothing is written to disk. `deploy.env` keeps only
+non-secret settings plus `KEY_VAULT_NAME`.
+
+| Secret | Exported as |
+|---|---|
+| `database-password` | `DATABASE_PASSWORD` |
+| `keycloak-db-password` | `KEYCLOAK_DB_PASSWORD` |
+| `keycloak-admin-password` | `KEYCLOAK_ADMIN_PASSWORD` |
+| `keycloak-provisioner-secret` | `KEYCLOAK_PROVISIONER_SECRET` |
+| `ml-openrouter-api-key` | `ML_OPENROUTER_API_KEY` |
+
+Add or rotate a secret (rotating a database password also needs the database
+user changed):
+
+```bash
+az keyvault secret set --vault-name kv-mm272-bf5064f9 -n ml-openrouter-api-key \
+  --file key.txt --content-type env:ML_OPENROUTER_API_KEY
+sudo ./infra/deploy/compose.sh up -d   # picks up the new value
+```
+
+`prepare.py` still writes generated secrets into a fresh `deploy.env`; move them
+to the vault and delete those lines, as done for this deployment. A vault
+outage stops `compose.sh` from starting or changing containers; running
+containers are unaffected.
+
 Keycloak identity administration remains internal. Authenticate its CLI (password
 prompt; use the generated private management password):
 

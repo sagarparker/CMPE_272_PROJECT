@@ -22,7 +22,9 @@ def main():
     parser.add_argument("--expect-domain", required=True)
     args = parser.parse_args()
     env_file = ROOT / "infra/deploy/runtime/deploy.env"
-    env = dict(x.split("=", 1) for x in env_file.read_text().splitlines() if "=" in x)
+    from vault_env import load
+
+    env = load(env_file)  # includes Key Vault secrets when KEY_VAULT_NAME is set
     if args.expect_domain != env["APP_DOMAIN"]:
         raise SystemExit("Deployment domain does not match explicit target")
     if env.get("KEYCLOAK_PROVISIONER_SECRET"):
