@@ -62,7 +62,7 @@ CONFIG_KEYS = {
 def load_config(path):
     values = read_env(path)
     c = {key: values[variable] for key, variable in CONFIG_KEYS.items() if values.get(variable)}
-    for key, default in {'location': 'swedencentral', 'ssh_key': '~/.ssh/mediamesh-demo',
+    for key, default in {'location': 'swedencentral', 'ssh_key': '~/.ssh/mediamesh',
                          'ssh_user': 'azureuser', 'vm_size': 'Standard_B2as_v2', 'container': 'mediamesh'}.items():
         c.setdefault(key, default)
     required = ['subscription', 'resource_group', 'location', 'vm_name', 'dns_label',

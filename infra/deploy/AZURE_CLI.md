@@ -41,7 +41,7 @@ overwriting your existing values. Set:
 | `ADMIN_EMAIL` | Administrator's verified Google email |
 | `ACME_EMAIL` | HTTPS certificate contact email |
 | `AZURE_SSH_CIDR` | Your public IPv4 address followed by `/32` |
-| `AZURE_SSH_KEY` | Dedicated local private key path; default `~/.ssh/mediamesh-demo` |
+| `AZURE_SSH_KEY` | Dedicated local private key path; default `~/.ssh/mediamesh` |
 | `AZURE_SSH_USER` | Default `azureuser` |
 | `AZURE_VM_SIZE` | Default `Standard_B2as_v2` (2 vCPU / 8 GiB) |
 | `GOOGLE_CLIENT_ID` | Google OAuth Web application client ID |
@@ -84,7 +84,7 @@ Feature branches and unpushed commits are refused before creating resources.
 
 The script validates settings, signs into Azure if necessary, and creates a
 dedicated SSH key if absent (ssh-keygen may prompt for its passphrase). For a
-passphrase-protected key, `ssh-add ~/.ssh/mediamesh-demo` avoids repeated prompts.
+passphrase-protected key, `ssh-add ~/.ssh/mediamesh` avoids repeated prompts.
 It creates a NEW VM, 100 GiB Standard SSD, static public IP, DNS hostname, NSG,
 managed identity, storage permissions, Blob CORS, versioning and seven-day soft
 delete. Only 80/443 are public; SSH is restricted to your configured IP.
