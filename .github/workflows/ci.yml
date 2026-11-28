@@ -54,7 +54,7 @@ jobs:
       - name: Container logs
         if: always()
         run: docker compose logs --no-color > compose.log
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: failure-details
