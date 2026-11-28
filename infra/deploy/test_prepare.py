@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -99,6 +100,13 @@ class DeploymentTests(unittest.TestCase):
                 "mediamesh",
                 output,
             )
+            # Shell variables override --env-file in Compose; CI exports ADMIN_EMAIL.
+            defined = {
+                line.split("=", 1)[0]
+                for line in (output / "deploy.env").read_text().splitlines()
+                if "=" in line and not line.lstrip().startswith("#")
+            }
+            environment = {k: v for k, v in os.environ.items() if k not in defined}
             result = subprocess.run(
                 [
                     "docker",
@@ -114,6 +122,7 @@ class DeploymentTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
                 check=True,
+                env=environment,
             )
             config = json.loads(result.stdout)
             self.assertEqual(config["name"], "mediamesh-deploy")
