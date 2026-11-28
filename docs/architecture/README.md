@@ -124,14 +124,13 @@ and caption/query text for verification; embeddings are not sent to OpenRouter.
 ## Startup, seed and persistence
 
 `./infra/manage.sh start` starts services and initializes schema/login fixtures;
-it does not upload the demo media. `./infra/seed-demo.sh` checks hosted credentials
-and model capabilities, downloads pinned demo files, signs in, uploads/resumes
-50 assets, waits for READY, backfills missing representations and runs search,
-ownership and preview checks. Existing captions are retained across model changes.
-The seed renews its demo browser sessions during long runs.
+it does not upload the demo media. The administrator's **Seed** tab asks the
+backend to download the pinned demo images, write them to the configured storage
+and queue normal indexing jobs; reruns resume and skip existing images. Existing
+captions are retained across model changes.
 
 Postgres, blob files and model weights persist in Docker volumes across normal
-restarts. The ignored demo upload state enables resumable seeding. No caption or
+restarts. No caption or
 embedding is regenerated on each normal search unless its cached text is stale.
 
 ## Runtime profiles and deployment parity

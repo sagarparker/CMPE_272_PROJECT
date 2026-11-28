@@ -11,9 +11,10 @@ From the repository root, configure `ML_OPENROUTER_API_KEY` in ignored `.env`, t
 
 ```bash
 ./infra/manage.sh start
-# Optional: upload/resume the pinned demo library and verify its index.
-./infra/seed-demo.sh
 ```
+
+Optionally, sign in as the administrator and load the pinned demo library from
+the **Seed** tab.
 
 Use [the root README](../README.md#system-architecture) for the current Mermaid
 component and sequence diagrams, [the architecture guide](../docs/architecture/README.md)

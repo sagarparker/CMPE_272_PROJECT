@@ -29,11 +29,8 @@ Admin does not implicitly receive upload or search access. Legacy local password
 fixtures are no longer accepted by the API.
 
 For a populated nature showcase, sign in as the administrator and use the
-**Seed** tab, which works locally and in deployment. Locally you can instead run
-`./infra/seed-demo.sh` using Node.js 24 after setting `ADMIN_EMAIL` in `.env`;
-no prior sign-in is needed on a fresh stack.
-Choose **20, 50, 100 or 500 images** (`./infra/seed-demo.sh 50`; default: 20),
-owned by the configured admin. See the [demo setup and usage](infra/demo/README.md)
+**Seed** tab, which works locally and in deployment. Choose **20, 50, 100 or 500
+images**, owned by the administrator. See the [demo setup and usage](infra/demo/README.md)
 and [media attribution](ml-service/evaluation/DEMO_ATTRIBUTION.md).
 
 See [the runbook](infra/README.md) for testing and Azure deployment.

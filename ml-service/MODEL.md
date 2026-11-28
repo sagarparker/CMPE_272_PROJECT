@@ -102,11 +102,9 @@ sampled video frames, to the hosted model. EmbeddingGemma 2 remains local.
 
 ```bash
 ./infra/manage.sh start
-./infra/seed-demo.sh
 ```
 
-The seed checks credentials/model capabilities before uploads, using unbilled
-metadata requests. Captions have a 220-token output limit, and batch verification
+Load the demo library from the administrator's **Seed** tab if needed. Captions have a 220-token output limit, and batch verification
 has a 160-token limit. Provider routing caps are `ML_OPENROUTER_MAX_INPUT_PRICE`
 (default $0.20/M tokens) and `ML_OPENROUTER_MAX_OUTPUT_PRICE` ($0.75/M tokens).
 A provider above these caps is not selected; insufficient capacity/budget returns

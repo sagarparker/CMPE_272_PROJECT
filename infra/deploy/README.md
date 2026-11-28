@@ -247,8 +247,7 @@ References: [Student credit terms](https://learn.microsoft.com/azure/education-h
 For the curated collection, sign in as `ADMIN_EMAIL` and use the **Seed** tab; see
 [the demo dataset guide](../demo/README.md). It writes to this deployment's Blob
 container with the VM managed identity and needs outbound HTTPS to Wikimedia. Run
-`sudo ./infra/deploy/backup.sh` first. The localhost command-line seeder remains
-restricted to Azurite.
+`sudo ./infra/deploy/backup.sh` first.
 
 
 ## Search parity with the integrated stack

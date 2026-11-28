@@ -4,7 +4,6 @@ import { readFileSync } from "node:fs";
 
 const read = relative => JSON.parse(readFileSync(new URL(relative, import.meta.url)));
 const manifest = read("../../ml-service/evaluation/demo-manifest.json");
-const fixture = read("../../infra/demo/accounts.json");
 const realm = read("../../infra/keycloak/mediamesh-realm.json");
 
 test("demo media have distinct pinned sources, credits and valid upload metadata", () => {
@@ -31,8 +30,7 @@ test("demo media have distinct pinned sources, credits and valid upload metadata
   }
 });
 
-test("realm imports only the provisioner; legacy accounts are retained for cleanup only", () => {
+test("realm imports only the provisioner and no password logins", () => {
   assert.ok(realm.users.every(user => user.serviceAccountClientId));
-  assert.equal(fixture.accounts.length, 7);
   assert.equal(realm.clients.find(client => client.clientId === "mediamesh-web").directAccessGrantsEnabled, false);
 });

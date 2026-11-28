@@ -15,8 +15,6 @@ import org.springframework.http.HttpStatus;
 @Service
 public class IdentityService {
     public enum Role { ADMIN, UPLOADER, RESEARCHER }
-    /** Subject prefix of an administrator row reserved by the local demo seed (seed_demo.py). */
-    static final String PENDING_ADMIN_SUBJECT = "pending-google-admin:";
     public record User(UUID id, String email, String displayName, List<String> roles, boolean primaryAdmin,
             List<String> requestedRoles, String requestStatus) {}
     public record AccessRequest(UUID id, User user, List<String> roles, String status) {}
@@ -40,15 +38,7 @@ public class IdentityService {
         String subject = jwt.getSubject();
         if (subject == null || subject.isBlank()) throw new OAuth2AuthenticationException("invalid_token");
         boolean admin = !adminEmail.isEmpty() && adminEmail.equalsIgnoreCase(jwt.getClaimAsString("email"));
-        if (admin) {
-            jdbc.execute("SELECT pg_advisory_xact_lock(27201)");
-            // The local demo seed may reserve the administrator before any sign-in; bind it now.
-            jdbc.update("""
-                UPDATE users SET subject=? WHERE issuer=? AND subject=? AND deleted_at IS NULL
-                AND NOT EXISTS (SELECT 1 FROM users WHERE issuer=? AND subject=?)
-                """, subject, issuer, PENDING_ADMIN_SUBJECT + adminEmail.toLowerCase(Locale.ROOT),
-                issuer, subject);
-        }
+        if (admin) jdbc.execute("SELECT pg_advisory_xact_lock(27201)");
         UUID candidate = UUID.randomUUID();
         jdbc.update("""
             INSERT INTO users(id, issuer, subject, email, display_name) VALUES (?,?,?,?,?)

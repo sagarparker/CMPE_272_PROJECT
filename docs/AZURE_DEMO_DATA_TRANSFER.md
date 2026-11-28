@@ -1,5 +1,11 @@
 # Demo collection transfer to Azure
 
+> **Retired.** This records a one-off import that used password-based demo
+> accounts, which the Google-only application no longer accepts; its
+> `accounts.json` fixture and provisioning script are gone. To load the demo
+> collection now, sign in as the administrator and use the **Seed** tab (see
+> [the demo dataset guide](../infra/demo/README.md)).
+
 This transfers the curated **48 photos and 2 videos** from the working local
 demo into the deployed application. It uses the normal upload/completion APIs,
 private Blob SAS and the real cloud ML worker. It does not restore the localhost

@@ -56,8 +56,8 @@ Do not delete recovery copies until catalog access and backups have been verifie
 Run `./infra/check.sh` and the browser suite after the model is ready. Browser
 acceptance verifies photo/video upload, duplicate/overwrite rejection, completion,
 indexing, search, gallery previews, downloads, related media, and role revocation.
-`./infra/seed-demo.sh` reuses the existing collection; its guard now requires local
-Azurite and public local Keycloak fixtures. It cannot seed the cloud deployment.
+The administrator's **Seed** tab loads the demo collection into whichever storage
+the backend uses, locally or in the cloud deployment.
 
 Verified in this workspace: 36 Java tests, 4 frontend unit tests, 105 Python
 tests, deployment configuration tests, Prometheus configuration/rule tests, and

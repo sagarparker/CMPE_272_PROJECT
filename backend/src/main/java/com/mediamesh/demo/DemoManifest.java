@@ -15,8 +15,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * The bundled, checksum-pinned showcase manifest (ml-service/evaluation/demo-manifest.json).
- * Selection and asset IDs match mediamesh_ml.dataset.select_images and seed_demo.seed_image,
- * so the command-line seed and the Seed tab recognise each other's assets.
+ * Selection order matches mediamesh_ml.dataset.select_images; asset IDs are stable UUIDv5 values
+ * (also used by the retired command-line seed), so reruns recognise existing images.
  */
 @Component
 public class DemoManifest {
