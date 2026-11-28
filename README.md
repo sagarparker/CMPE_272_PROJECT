@@ -189,7 +189,7 @@ sequenceDiagram
     Admin->>UI: Review pending requests
     UI->>API: POST /api/admin/access-requests/{id}/decision
     API->>API: Verify sole ADMIN access
-    API->>DB: Approve requested roles or reject; audit decision
+    API->>DB: Approve requested roles or reject, then audit the decision
     Note over API,DB: Approved roles apply on the next API request
 ```
 
