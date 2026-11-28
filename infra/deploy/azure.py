@@ -351,6 +351,52 @@ def wait_for_ssh(s):
     raise ValueError('SSH is not reachable yet. Check VM running state and port 22, then rerun ./deploy.')
 
 
+def clean(s, confirmed=False):
+    """Erase this deployment's app data, without deleting its Azure infrastructure."""
+    if not confirmed:
+        raise ValueError('Clean deletes accounts, databases and active media. Run ./deploy clean --yes to perform it.')
+    # Runtime is removed last. Its absence means a completed clean (or no deployment).
+    present = ssh(s, f'test -f {REMOTE}/shared/runtime/deploy.env && echo yes || echo no', capture=True).strip()
+    if present != 'yes':
+        print('No runtime configuration remains; no cleanup needed. Run ./deploy to install fresh.')
+        return
+    locate = """from pathlib import Path
+root = Path('/opt/mediamesh')
+current = root / 'current'
+if current.is_dir():
+    print(current.resolve())
+else:
+    candidates = [p for p in (root / 'releases').iterdir() if (p / 'compose.deploy.yaml').is_file()]
+    if not candidates:
+        raise RuntimeError('No release available for cleanup')
+    print(max(candidates, key=lambda p: p.stat().st_mtime))
+"""
+    release = ssh(s, 'python3 -', input=locate, capture=True).strip()
+    if not re.fullmatch(re.escape(REMOTE) + r'/releases/[0-9a-f]{40}', release):
+        raise ValueError('Unexpected release path; refusing cleanup')
+    print('[Clean] Stopping application services', flush=True)
+    ssh(s, f'cd {release} && sudo ./infra/deploy/compose.sh stop')
+    print('[Clean] Deleting active media from this deployment container', flush=True)
+    delete_media = """from mediamesh_ml.config import Settings
+from mediamesh_ml.media import AzureBlobMediaSource
+source = AzureBlobMediaSource(Settings())
+container = source.client.get_container_client(source.container)
+count = 0
+for blob in container.list_blobs(name_starts_with='assets/'):
+    container.delete_blob(blob.name, delete_snapshots='include')
+    count += 1
+print(f'Deleted {count} active media blobs.', flush=True)
+"""
+    ssh(s, f'cd {release} && sudo ./infra/deploy/compose.sh run --rm -T --no-deps --entrypoint python ml-worker -', input=delete_media)
+    print('[Clean] Removing containers, database, metrics and runtime credentials', flush=True)
+    ssh(s, f'set -eu; cd {release}; sudo ./infra/deploy/compose.sh down; '
+           'for volume in mediamesh-deploy_postgres-data mediamesh-deploy_prometheus-data; do '
+           'if sudo docker volume inspect "$volume" >/dev/null 2>&1; then sudo docker volume rm "$volume"; fi; done; '
+           f'if [ -L {REMOTE}/current ]; then rm {REMOTE}/current; fi; '
+           f'sudo rm -rf {REMOTE}/shared/runtime')
+    print('Clean complete. VM, model cache, HTTPS certificates and local Azure state remain. Run ./deploy to install fresh.')
+
+
 def ensure_ssh_key(c):
     key = Path(c['ssh_key'])
     if key.exists() and not Path(str(key) + '.pub').exists():
@@ -363,9 +409,14 @@ def ensure_ssh_key(c):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--env-file', default=str(ROOT / '.env.deploy'), help='Local dotenv file (default: project .env.deploy)')
-    p.add_argument('action', choices=['auto', 'provision', 'deploy', 'configure', 'logs', 'status', 'restart', 'stop', 'vm-stop', 'vm-start'])
+    p.add_argument('action', choices=['auto', 'provision', 'deploy', 'configure', 'clean', 'logs', 'status', 'restart', 'stop', 'vm-stop', 'vm-start'])
     p.add_argument('services', nargs='*')
+    p.add_argument('--yes', action='store_true', help='Confirm destructive cleanup for the clean action')
     args = p.parse_args()
+    if args.action == 'clean' and not args.yes:
+        p.error('clean deletes accounts, databases and active media; use ./deploy clean --yes')
+    if args.yes and args.action != 'clean':
+        p.error('--yes is supported only for clean')
     source = published_release() if args.action == 'auto' else None
     c = load_config(args.env_file)
     credentials = deployment_credentials(args.env_file) if args.action in ['auto', 'deploy', 'configure'] else None
@@ -397,6 +448,8 @@ def main():
     s = state(c)
     if args.action == 'deploy':
         deploy(s, credentials)
+    elif args.action == 'clean':
+        clean(s, confirmed=args.yes)
     elif args.action == 'configure':
         sync_runtime(s, credentials)
         ssh(s, f'cd {REMOTE}/current && sudo ./infra/deploy/compose.sh up -d --no-build --wait --wait-timeout 300')
@@ -405,6 +458,10 @@ def main():
     elif args.action in ['vm-stop', 'vm-start']:
         az('vm', 'deallocate' if args.action == 'vm-stop' else 'start', '--subscription', s['subscription'],
            '--resource-group', s['resource_group'], '--name', s['vm_name'])
+    elif args.action == 'stop':
+        ssh(s, f'if [ -f {REMOTE}/current/infra/deploy/runtime/deploy.env ]; then '
+               f'cd {REMOTE}/current && sudo ./infra/deploy/compose.sh stop; '
+               'else echo "No active deployment to stop."; fi')
     else:
         command = {'status': 'ps --all', 'stop': 'stop', 'restart': 'restart', 'logs': 'logs --tail=100'}[args.action]
         ssh(s, f'cd {REMOTE}/current && sudo ./infra/deploy/compose.sh {command} ' + shlex.join(args.services))

@@ -170,7 +170,7 @@ Failed starts may already have applied database migrations: reverting the source
 symlink alone isn't a transactional rollback. Don't run `down -v` or regenerate
 runtime identities on an existing catalog. The script updates the Google provider on existing realms using the included
 [account setup updater](../../docs/ACCOUNT_SETUP.md), because realm import is skipped
-on restart. Azure infrastructure deletion is deliberately not provided.
+on restart. Azure infrastructure deletion is deliberately not provided; `clean --yes` resets only application data on the existing infrastructure.
 
 Local tests cover configuration guards and Git release handling. The scripts have
 not been validated against a live Azure deployment.
@@ -196,3 +196,33 @@ Progress messages identify Azure operations and build stages. For failures, insp
 `./deploy logs` before rerunning. Do not delete local state or the Azure resource
 group to retry. A fully independent new deployment needs its own checkout/state,
 new resource names, and the corresponding Google redirect URI; it incurs new costs.
+
+## Stop, clean and redeploy manually
+
+Run these commands yourself from your local checkout:
+
+```sh
+git switch main
+git pull --ff-only origin main
+./deploy stop
+./deploy clean --yes
+# Correct ADMIN_EMAIL and credentials in .env.deploy before continuing.
+./deploy
+```
+
+`clean --yes` deletes the application's and Keycloak's databases, active `assets/`
+blobs, metrics volume and private runtime configuration for the saved deployment.
+All accounts and role approvals are reset. It stops services before deleting media
+and does not deploy afterward. Repeating a completed clean is a no-op.
+It preserves the VM, Azure resource group/storage account, model cache, HTTPS
+certificates and local Azure state. It does not create a backup, erase old backups
+or release directories, or purge Azure-retained blob versions/soft-deleted data.
+Those retained copies can remain billable under storage retention policies.
+
+Do not delete `infra/deploy/runtime/azure-state.json`: the next `./deploy` uses it
+to reuse the same VM and generate fresh app configuration. Register the same Google
+redirect URI and sign in with the configured administrator after redeployment.
+
+To shut down compute instead of cleaning data, use `./deploy vm-stop`. Start the VM
+with `./deploy vm-start` before running clean/deploy. These commands control only
+the VM in the saved deployment state, not other VMs in your subscription.

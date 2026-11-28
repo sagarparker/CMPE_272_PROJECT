@@ -251,6 +251,29 @@ class DeploymentGuards(unittest.TestCase):
             source.assert_not_called()
             self.assertIn('--no-build', ssh.call_args.args[1])
 
+    def test_clean_requires_explicit_flag_without_connecting(self):
+        with patch.object(module, 'ssh') as ssh:
+            with self.assertRaisesRegex(ValueError, 'clean --yes'):
+                module.clean({})
+            ssh.assert_not_called()
+
+    def test_repeating_completed_clean_is_a_noop(self):
+        with patch.object(module, 'ssh', return_value='no\n') as ssh:
+            module.clean({}, confirmed=True)
+            self.assertEqual(ssh.call_count, 1)
+
+    def test_clean_is_scoped_and_stops_writers_before_deletion(self):
+        release = module.REMOTE + '/releases/' + 'a' * 40
+        with patch.object(module, 'ssh', side_effect=['yes\n', release + '\n', None, None, None]) as ssh:
+            module.clean({}, confirmed=True)
+        commands = [call.args[1] for call in ssh.call_args_list]
+        self.assertTrue(commands[2].endswith('compose.sh stop'))
+        self.assertIn('--no-deps --entrypoint python ml-worker', commands[3])
+        self.assertIn('mediamesh-deploy_postgres-data', commands[4])
+        self.assertNotIn('down -v', commands[4])
+        self.assertNotIn('group delete', ' '.join(commands))
+        self.assertIn("name_starts_with='assets/'", ssh.call_args_list[3].kwargs['input'])
+
     def test_state_is_private(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'state.json'
