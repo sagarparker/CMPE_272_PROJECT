@@ -184,8 +184,8 @@ public class DemoSeedService {
                 }
                 if (content.length > MAX_DOWNLOAD_BYTES)
                     throw new SeedException("Image " + item.id() + " exceeds the 20 MB download limit");
-                if (!sha256(content).equals(item.sha256()))
-                    throw new SeedException("Checksum mismatch for " + item.id() + "; the source file changed");
+                if (!item.acceptsSha256(sha256(content)))
+                    throw new SeedException("Checksum mismatch for " + item.id() + "; the downloaded file is not a pinned variant");
                 return content;
             } catch (IOException e) {
                 last = e;

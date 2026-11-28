@@ -48,3 +48,18 @@ credits and applicable license terms, including CC BY-SA requirements.
 Image embeddings stay local to the ML service. Source URLs can disappear or
 change; checksum failures require reviewing the replacement and its rights.
 Keep Compose volumes to preserve users, media and indexing state.
+
+### Wikimedia thumbnail variants
+
+Some Wikimedia thumbnail caches serve the same image with different JPEG metadata,
+so a whole-file SHA-256 can differ between the local machine and the Azure region.
+The manifest retains each original `sha256` and can list explicitly recorded
+`sha256_alternates` for the same source. Both the Seed tab and Python downloader
+accept only those pinned bytes; unknown content still fails verification. Alternate
+pins never change the canonical asset ID, so an existing seed resumes without
+creating duplicates. Three regional variants in the 20-image collection were
+identified during the Azure seed investigation. For `demo-bird-02`, the two files
+were also compared after removing metadata: compressed image bytes were identical.
+No automatic checksum refresh or checksum bypass is used. Newly observed variants
+require review and an explicit manifest update; the larger collections have not
+been exhaustively checked across Wikimedia regions.

@@ -185,6 +185,7 @@
       "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
       "description": "This photo taken in February 2020 in Tanguar Haor shows a Grey-headed Swamphen just before it takes flight. Standing on the edge of the wetland, the bird seems to be preparing to take flight. The grey-black colour of its feathers, sharp eyesight, and its posture of blending into the environment make the photo more vivid. This scene, amidst the vast wetlands and silent nature of Tanguar Haor, seems to capture a beautiful moment of nature. Tanguar Haor, Bangladesh.",
       "sha256": "059e40aee531aa66fe74157d858adb13ddc334843c3afc66043ba0243928fb67",
+      "sha256_alternates": ["7fe3612f34ad8cd906b57e0025803e18513c859b4d41995a84fab80d2f621a06"],
       "review_note": "Visually reviewed for subject relevance; original source and license retained.",
       "domain": "birds",
       "species": null,
@@ -204,6 +205,7 @@
       "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
       "description": "A bird flying above a water body",
       "sha256": "ea8dadee580103b2875739a8aaa15dddabe0a3553676e0ebc90f4e2f1e6cf781",
+      "sha256_alternates": ["b20499b73beceb91967c6311e3283e133b7d2c209f759493ac34a853a766eb50"],
       "review_note": "Visually reviewed for subject relevance; original source and license retained.",
       "domain": "birds",
       "species": null,
@@ -646,6 +648,7 @@
       "selection_query": "clownfish anemone underwater",
       "review_note": "Visually reviewed for subject relevance; original source and license retained.",
       "sha256": "55fc6eeef90569e00fd04ab3b762e493f8740ec22fe3df6631a886c972df879b",
+      "sha256_alternates": ["e5eb26194157a70579be1bc0625f082489d0bfb249f7e0974aa5f7ba2070cc98"],
       "source_title": "Anemone purple anemonefish"
     },
     {

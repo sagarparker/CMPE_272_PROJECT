@@ -27,7 +27,10 @@ public class DemoManifest {
 
     public record Item(String id, String filename, String title, String description, String species,
             String location, LocalDate capturedAt, String creator, String license, String licenseUrl,
-            String sourcePage, String downloadUrl, String sha256, String domain) {
+            String sourcePage, String downloadUrl, String sha256, String domain, List<String> sha256Alternates) {
+        public boolean acceptsSha256(String digest) {
+            return sha256.equals(digest) || sha256Alternates.contains(digest);
+        }
         public UUID assetId() {
             return uuid5(NAMESPACE_URL, "mediamesh:demo:" + id + ":" + sha256);
         }
@@ -88,7 +91,7 @@ public class DemoManifest {
         return List.copyOf(result);
     }
 
-    private static Item item(JsonNode node) {
+    static Item item(JsonNode node) {
         String filename = text(node, "filename", "");
         if (filename.isEmpty() || filename.contains("/") || filename.contains("\\") || !filename.endsWith(".jpg"))
             throw new IllegalStateException("Invalid demo filename: " + filename);
@@ -97,12 +100,22 @@ public class DemoManifest {
             throw new IllegalStateException("Expected an approved Wikimedia HTTPS image URL");
         String sha = text(node, "sha256", "");
         if (!sha.matches("[0-9a-f]{64}")) throw new IllegalStateException("Manifest must pin SHA-256 values");
+        List<String> alternates = new ArrayList<>();
+        JsonNode alternatives = node.get("sha256_alternates");
+        if (alternatives != null) {
+            if (!alternatives.isArray()) throw new IllegalStateException("SHA-256 alternates must be an array");
+            for (JsonNode alternative : alternatives) {
+                if (!alternative.isTextual() || !alternative.asText().matches("[0-9a-f]{64}"))
+                    throw new IllegalStateException("Manifest must pin valid alternate SHA-256 values");
+                alternates.add(alternative.asText());
+            }
+        }
         String captured = text(node, "capturedAt", null);
         Item item = new Item(text(node, "id", ""), filename, text(node, "title", ""),
                 text(node, "description", null), text(node, "species", null), text(node, "location", null),
                 captured == null ? null : LocalDate.parse(captured), text(node, "creator", ""),
                 text(node, "license", ""), text(node, "license_url", null), text(node, "source_page", ""),
-                url.toString(), sha, text(node, "domain", ""));
+                url.toString(), sha, text(node, "domain", ""), List.copyOf(alternates));
         if (item.creator().isBlank() || item.license().isBlank() || item.sourcePage().isBlank())
             throw new IllegalStateException("Missing credits: " + item.id());
         return item;

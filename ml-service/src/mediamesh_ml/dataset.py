@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import re
 import time
 import urllib.request
 from pathlib import Path
@@ -46,11 +47,15 @@ def select_images(items: list[dict], count: int) -> list[dict]:
 
 
 def download(item: dict, directory: Path) -> Path:
-    expected = item["sha256"]
-    if not expected or len(expected) != 64:
-        raise ValueError("Manifest must contain a pinned SHA-256")
+    expected = item.get("sha256")
+    alternates = item.get("sha256_alternates", [])
+    if not isinstance(alternates, list):
+        raise ValueError("SHA-256 alternates must be an array")
+    accepted = [expected, *alternates]
+    if any(not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value) for value in accepted):
+        raise ValueError("Manifest must contain pinned SHA-256 values")
     path = directory / item["filename"]
-    if path.exists() and hashlib.sha256(path.read_bytes()).hexdigest() == expected:
+    if path.exists() and hashlib.sha256(path.read_bytes()).hexdigest() in accepted:
         return path
     request = urllib.request.Request(item["download_url"], headers={"User-Agent": USER_AGENT})
     for attempt in range(3):
@@ -59,7 +64,7 @@ def download(item: dict, directory: Path) -> Path:
                 content = response.read(20_000_001)
             if len(content) > 20_000_000:
                 raise ValueError("Sample exceeds 20 MB download bound")
-            if hashlib.sha256(content).hexdigest() != expected:
+            if hashlib.sha256(content).hexdigest() not in accepted:
                 raise ValueError(f"Checksum mismatch for {item['id']}; do not silently refresh")
             temporary = path.with_suffix(".part")
             temporary.write_bytes(content)
