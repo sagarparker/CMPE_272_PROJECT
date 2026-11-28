@@ -280,20 +280,25 @@ References: [Student credit terms](https://learn.microsoft.com/azure/education-h
 For the curated collection, follow [the demo transfer runbook](../../docs/AZURE_DEMO_DATA_TRANSFER.md). Its explicit cloud importer uses private credentials; the localhost seeder remains restricted to Azurite.
 
 
-## Search parity with the integrated stack
+## Search: EmbeddingGemma 2 hybrid search
 
-This standalone manifest still defaults to CLIP, with separate model instances
-in the API and worker. OpenRouter caption settings are available for new uploads,
-but `gemma-embed`, `ML_EMBEDDING_MODEL=embeddinggemma2` and hybrid verification are
-not wired in here. The default backend ML deadline is also 1.5 seconds. The root
-stack's 80/20 hybrid search and hosted final check must not be assumed on Azure.
+Azure runs the same search as the root stack: `gemma-embed` serves EmbeddingGemma 2
+(about 1.5 GB of weights, 2.9 GiB RAM, CPU only); `ml-api` and `ml-worker` call it
+instead of loading CLIP (`ML_EMBEDDING_MODEL=embeddinggemma2`). Search combines
+visual and metadata vectors, then verifies candidates against the AI-generated
+descriptions through OpenRouter (`ML_VERIFY_CAPTIONS=true`). The minimum score is
+0.67 and the backend ML deadline is 40 s to allow for verification.
 
-Before deploying the current local search behavior, add the shared embedding
-service and matching model configuration, enable verification, align deadlines,
-reindex the deployed catalog with the new embedding version, refresh metadata
-vectors and validate search/caption/Blob access against the real host. Do not mix
-CLIP vectors with Gemma query vectors. Credentials belong in private
-`runtime/deploy.env`; copy neither root `.env` nor demo credentials into source.
-See the [current Mermaid diagrams](../../README.md#system-architecture) and
-[architecture guide](../../docs/architecture/README.md). This documentation change
-does not claim those infrastructure/migration steps have been performed.
+Measured on the Standard_B2as_v2 VM: a text query embeds in 0.1–0.5 s; an image
+embedding takes about 15–20 s, so a photo upload takes roughly 20 s plus its
+caption, and a video (8 sampled frames) a few minutes. Search latency also
+includes the hosted verification call, so the earlier 2-second search SLO does
+not hold with verification enabled.
+
+After switching models, embed and caption the existing catalog once (old CLIP
+vectors stay in the table under their own model version and are ignored):
+
+```bash
+sudo ./infra/deploy/compose.sh exec -T ml-worker python -m mediamesh_ml.reindex
+sudo ./infra/deploy/compose.sh exec -T ml-worker python -m mediamesh_ml.captions backfill
+```
