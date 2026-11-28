@@ -168,6 +168,7 @@ class DeploymentGuards(unittest.TestCase):
                 module.deploy(state, credentials, ('https://github.com/example/public.git', 'a' * 40))
             self.assertEqual(module.read_env(env)['DATABASE_PASSWORD'], 'generated-password')
             self.assertEqual(module.read_env(env)['GOOGLE_CLIENT_SECRET'], '$literal-secret')
+            self.assertEqual(module.read_env(env)['ADMIN_EMAIL'], 'a@example.com')
             self.assertFalse(any('$literal-secret' in command for command in calls))
             self.assertEqual(env.stat().st_mode & 0o777, 0o600)
 
@@ -178,6 +179,77 @@ class DeploymentGuards(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'stop'):
                 module.main()
             self.assertEqual(load.call_args.args[0], str(module.ROOT / '.env.deploy'))
+
+    def test_current_admin_email_overrides_saved_state(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'state.json'
+            saved = dict(subscription='sub', resource_group='rg', vm_name='vm',
+                         admin_email='old@example.com', domain='host.example.com')
+            path.write_text(json.dumps(saved))
+            current = dict(saved, admin_email='new@example.com', certificate_email='a@example.com',
+                           ssh_key='/key', ssh_user='azureuser')
+            with patch.object(module, 'STATE', path):
+                self.assertEqual(module.state(current)['admin_email'], 'new@example.com')
+
+    def test_invalid_email_is_rejected_before_provisioning(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path, _ = self.config(folder)
+            with path.open('a') as stream:
+                stream.write('ADMIN_EMAIL=not-an-email\n')
+            with self.assertRaisesRegex(ValueError, 'Invalid ADMIN_EMAIL'):
+                module.load_config(path)
+
+    def test_storage_changes_are_not_silently_ignored(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'state.json'
+            saved = dict(subscription='sub', resource_group='rg', vm_name='vm', storage_account='oldstorage')
+            path.write_text(json.dumps(saved))
+            with patch.object(module, 'STATE', path):
+                with self.assertRaisesRegex(ValueError, 'AZURE_STORAGE_ACCOUNT differs'):
+                    module.state(dict(saved, storage_account='newstorage'))
+
+    def test_missing_state_has_recovery_message(self):
+        with tempfile.TemporaryDirectory() as folder:
+            with patch.object(module, 'STATE', Path(folder) / 'missing.json'):
+                with self.assertRaisesRegex(ValueError, 'No saved deployment state'):
+                    module.state({})
+
+    def test_google_change_stays_pending_until_updater_succeeds(self):
+        with tempfile.TemporaryDirectory() as folder:
+            env = Path(folder) / 'deploy.env'
+            env.write_text('DATABASE_PASSWORD=preserved\nGOOGLE_CLIENT_ID=old\nGOOGLE_CLIENT_SECRET=old\n')
+            config = dict(admin_email='new@example.com', certificate_email='a@example.com')
+            credentials = dict(GOOGLE_CLIENT_ID='new', GOOGLE_CLIENT_SECRET='new-secret', ML_OPENROUTER_API_KEY='key')
+            def execute(state, command, **kwargs):
+                script = kwargs['input'].replace('/opt/mediamesh/shared/runtime/deploy.env', str(env))
+                exec(compile(script, '<sync>', 'exec'), {})
+            with patch.object(module, 'ssh', side_effect=execute):
+                module.sync_runtime(config, credentials)
+                self.assertTrue(env.with_name('google-update-pending').exists())
+                env.with_name('google-update-pending').unlink()
+                module.sync_runtime(config, credentials)
+                self.assertFalse(env.with_name('google-update-pending').exists())
+            self.assertEqual(module.read_env(env)['DATABASE_PASSWORD'], 'preserved')
+            self.assertFalse(env.with_suffix('.env.tmp').exists())
+
+    def test_ssh_transient_failure_retries_but_bad_key_does_not(self):
+        config = dict(ssh_key='/key', ssh_user='azureuser', host='192.0.2.1')
+        failed = subprocess.CompletedProcess([], 255, stderr='Connection refused')
+        ready = subprocess.CompletedProcess([], 0, stderr='')
+        with patch.object(module.subprocess, 'run', side_effect=[failed, ready]), patch.object(module.time, 'sleep') as sleep:
+            module.wait_for_ssh(config)
+            sleep.assert_called_once_with(5)
+        with patch.object(module.subprocess, 'run', return_value=subprocess.CompletedProcess([], 255, stderr='Permission denied (publickey)')), patch.object(module.time, 'sleep') as sleep:
+            with self.assertRaisesRegex(ValueError, 'ssh-add'):
+                module.wait_for_ssh(config)
+            sleep.assert_not_called()
+
+    def test_configure_does_not_build_or_fetch_source(self):
+        with patch('sys.argv', ['azure.py', 'configure']), patch.object(module, 'load_config', return_value={'subscription': 'sub'}), patch.object(module, 'deployment_credentials', return_value={}), patch.object(module, 'az', return_value={'id': 'sub'}), patch.object(module, 'state', return_value={}), patch.object(module, 'sync_runtime') as sync, patch.object(module, 'sync_google'), patch.object(module, 'published_release') as source, patch.object(module, 'ssh') as ssh:
+            module.main()
+            sync.assert_called_once()
+            source.assert_not_called()
+            self.assertIn('--no-build', ssh.call_args.args[1])
 
     def test_state_is_private(self):
         with tempfile.TemporaryDirectory() as folder:

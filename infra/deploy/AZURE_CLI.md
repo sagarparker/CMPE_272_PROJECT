@@ -128,6 +128,8 @@ After merging changes into `main` and pushing, run `./deploy` again from `main`.
 are backed up before builds/migrations, and data volumes are preserved.
 
 ```sh
+./deploy configure                # apply changed .env.deploy without rebuilding
+./deploy logs backend ml-api      # recent logs; omit names for all services
 ./deploy status
 ./deploy restart backend
 ./deploy restart backend ml-api ml-worker
@@ -139,7 +141,14 @@ are backed up before builds/migrations, and data volumes are preserved.
 
 Individual restart names: `edge`, `frontend`, `backend`, `postgres`, `keycloak`,
 `ml-api`, `ml-worker`, `prometheus`. Restart does not apply code or environment
-changes. Containers running before VM deallocation should restart with Docker.
+changes. After editing `.env.deploy`, run `./deploy configure` to synchronize
+runtime settings and recreate affected containers without rebuilding. Normal
+`./deploy` also applies the current administrator email. After changing ADMIN_EMAIL,
+sign in with the corrected account; old administrator grants are removed by the
+backend authentication flow. Google client changes are applied to the existing Keycloak realm automatically.
+The script keeps a pending marker and retries failed provider updates on the next
+deployment/configuration run. This requires the generated Keycloak management
+credentials to remain valid; rotating them requires updating private runtime configuration. Containers running before VM deallocation should restart with Docker.
 If you explicitly stopped containers, run `./deploy` after starting the VM.
 Disk, public IP and Blob charges can continue while compute is deallocated.
 
@@ -159,9 +168,31 @@ is configured. Monitor disk usage.
 
 Failed starts may already have applied database migrations: reverting the source
 symlink alone isn't a transactional rollback. Don't run `down -v` or regenerate
-runtime identities on an existing catalog. For Google provider changes on an
-existing realm, follow [account setup](../../docs/ACCOUNT_SETUP.md); realm import
-is skipped on restart. Azure infrastructure deletion is deliberately not provided.
+runtime identities on an existing catalog. The script updates the Google provider on existing realms using the included
+[account setup updater](../../docs/ACCOUNT_SETUP.md), because realm import is skipped
+on restart. Azure infrastructure deletion is deliberately not provided.
 
 Local tests cover configuration guards and Git release handling. The scripts have
 not been validated against a live Azure deployment.
+
+## Recovering or starting again
+
+To correct ADMIN_EMAIL or application credentials, edit `.env.deploy` and run:
+
+```sh
+git switch main
+git pull --ff-only origin main
+./deploy configure
+```
+
+Sign out and sign in with the corrected Google account. The backend removes old
+administrator grants during authentication. `restart` deliberately retains Docker's
+normal restart behavior; use `configure` for env changes or `./deploy` for code changes.
+
+You don't need a new VM or fresh database to correct settings. `./deploy` resumes
+a partially completed installation using its existing state. It also starts
+PostgreSQL before backup when application services were explicitly stopped.
+Progress messages identify Azure operations and build stages. For failures, inspect
+`./deploy logs` before rerunning. Do not delete local state or the Azure resource
+group to retry. A fully independent new deployment needs its own checkout/state,
+new resource names, and the corresponding Google redirect URI; it incurs new costs.

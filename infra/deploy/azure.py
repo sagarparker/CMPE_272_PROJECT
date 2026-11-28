@@ -6,6 +6,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -19,11 +20,15 @@ def run(args, capture=False, **kwargs):
 
 
 def az(*args):
+    operation = ' '.join(str(a) for a in args[:next((i for i, a in enumerate(args) if str(a).startswith('--')), len(args))])
+    print(f'[Azure] {operation} — waiting for completion...', flush=True)
     return json.loads(run(['az', *args, '--output', 'json', '--only-show-errors'], capture=True) or 'null')
 
 
 def read_env(path):
     """Read dotenv data without sourcing it or expanding shell commands/variables."""
+    if not Path(path).is_file():
+        raise ValueError(f'Deployment env file not found: {path}. Copy .env.deploy.example to .env.deploy and fill it in.')
     values = {}
     for number, line in enumerate(Path(path).read_text().splitlines(), 1):
         line = line.strip()
@@ -74,6 +79,11 @@ def load_config(path):
             raise ValueError(f'Invalid {CONFIG_KEYS[key]}')
     if not re.fullmatch(r'[a-z0-9]{3,24}', c['storage_account']):
         raise ValueError('Storage account must be 3–24 lowercase letters/digits')
+    for name in ['admin_email', 'certificate_email']:
+        if not re.fullmatch(r'[a-zA-Z0-9._+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', c[name]):
+            raise ValueError(f'Invalid {CONFIG_KEYS[name]} in deployment env file')
+    if not re.fullmatch(r'[a-z0-9](?:[a-z0-9]|-(?!-)){1,61}[a-z0-9]', c['container']):
+        raise ValueError('Invalid AZURE_STORAGE_CONTAINER')
     c['ssh_key'] = str(Path(c['ssh_key']).expanduser().resolve())
     if not re.fullmatch(r'[a-z_][a-z0-9_-]*', c['ssh_user']):
         raise ValueError('Invalid SSH username')
@@ -93,14 +103,24 @@ def deployment_credentials(path):
 
 def save_state(s):
     STATE.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    STATE.write_text(json.dumps(s, indent=2) + '\n')
-    STATE.chmod(0o600)
+    temporary = STATE.with_suffix('.json.tmp')
+    temporary.write_text(json.dumps(s, indent=2) + '\n')
+    temporary.chmod(0o600)
+    temporary.replace(STATE)
 
 
 def state(c):
+    if not STATE.exists():
+        raise ValueError('No saved deployment state. Run ./deploy first; do not delete state for an existing deployment.')
     s = json.loads(STATE.read_text())
     if any(s[k] != c[k] for k in ['subscription', 'resource_group', 'vm_name']):
         raise ValueError('Saved state belongs to another deployment; use its matching config')
+    for key in ['storage_account', 'container', 'dns_label', 'location', 'vm_size']:
+        if key in s and s[key] != c[key]:
+            raise ValueError(f'{CONFIG_KEYS[key]} differs from saved infrastructure. Use the original setting; infrastructure migration is not automatic.')
+    # Saved state identifies infrastructure; current local settings control runtime configuration.
+    for key in ['admin_email', 'certificate_email', 'ssh_key', 'ssh_user']:
+        s[key] = c[key]
     return s
 
 
@@ -194,7 +214,7 @@ def provision(c):
                '--assignee-principal-type', 'ServicePrincipal', '--role', role, '--scope', role_scope, *scope)
     # Set CORS through ARM; no account keys or operator Blob data permissions needed.
     url = 'https://management.azure.com' + account['id'] + '/blobServices/default?api-version=2023-05-01'
-    properties = az('rest', '--method', 'get', '--url', url)['properties']
+    properties = {}
     properties['cors'] = {'corsRules': [{'allowedOrigins': ['https://' + c['domain']],
         'allowedMethods': ['GET', 'HEAD', 'PUT', 'OPTIONS'],
         'allowedHeaders': ['content-type', 'if-none-match', 'x-ms-blob-type', 'x-ms-version', 'range'],
@@ -207,6 +227,63 @@ def provision(c):
     print(f"Provisioned https://{c['domain']}. Google OAuth redirect URI:\n"
           f"https://{c['domain']}/auth/realms/mediamesh/broker/google/endpoint")
     print('Next: configure Google OAuth, then run the deploy command.')
+
+
+def sync_runtime(s, credentials):
+    runtime = {**credentials, 'ADMIN_EMAIL': s['admin_email'], 'ACME_EMAIL': s['certificate_email']}
+    for name in ['ADMIN_EMAIL', 'ACME_EMAIL']:
+        if not re.fullmatch(r'[a-zA-Z0-9._+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', runtime[name]):
+            raise ValueError(f'Invalid {name} in deployment env file')
+    # stdin to SSH, never command arguments, logs, Git, or shell history.
+    update = """import pathlib, os, shlex
+os.umask(0o077)
+p = pathlib.Path('/opt/mediamesh/shared/runtime/deploy.env')
+values = dict(line.split('=', 1) for line in p.read_text().splitlines() if '=' in line)
+incoming = CREDENTIALS
+if any(shlex.split(values.get(k, "''"))[0:1] != shlex.split(incoming[k])[0:1]
+       for k in ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET']):
+    p.with_name('google-update-pending').touch()
+values.update(incoming)
+temporary = p.with_suffix('.env.tmp')
+temporary.write_text(''.join(k + '=' + v + '\\n' for k, v in values.items()))
+temporary.chmod(0o600)
+temporary.replace(p)
+""".replace('CREDENTIALS', repr({k: "'" + v + "'" for k, v in runtime.items()}))
+    ssh(s, 'python3 -', input=update)
+
+
+def sync_google(s, release):
+    # Existing realms skip import. Retry a pending credential update until it succeeds.
+    print('[Deploy] Checking Google sign-in configuration', flush=True)
+    script = """import importlib.util, json, os, pathlib, shlex, subprocess, time, urllib.error
+runtime = pathlib.Path('/opt/mediamesh/shared/runtime')
+pending = runtime / 'google-update-pending'
+if pending.exists():
+    values = {}
+    for line in (runtime / 'deploy.env').read_text().splitlines():
+        if '=' in line:
+            key, value = line.split('=', 1)
+            tokens = shlex.split(value)
+            values[key] = tokens[0] if tokens else ''
+    cid = subprocess.check_output(['sudo', './infra/deploy/compose.sh', 'ps', '-q', 'keycloak'], text=True).strip()
+    container = json.loads(subprocess.check_output(['sudo', 'docker', 'inspect', cid], text=True))[0]
+    address = next(n['IPAddress'] for n in container['NetworkSettings']['Networks'].values() if n['IPAddress'])
+    spec = importlib.util.spec_from_file_location('google_config', 'infra/deploy/configure-google.py')
+    updater = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(updater)
+    for attempt in range(12):
+        try:
+            updater.configure('http://' + address + ':8080/auth', 'mediamesh', 'deployment-admin',
+                              values['KEYCLOAK_ADMIN_PASSWORD'], values['GOOGLE_CLIENT_ID'],
+                              values['GOOGLE_CLIENT_SECRET'], values['APP_DOMAIN'])
+            pending.unlink()
+            break
+        except (urllib.error.URLError, TimeoutError):
+            if attempt == 11:
+                raise RuntimeError('Google provider update failed. Check internal Keycloak readiness and management credentials, then retry ./deploy configure.') from None
+            time.sleep(5)
+"""
+    ssh(s, f'cd {release} && python3 -', input=script)
 
 
 def deploy(s, credentials, source=None):
@@ -231,35 +308,53 @@ if ! sudo docker compose version >/dev/null 2>&1; then
 fi
 sudo systemctl enable --now docker
 '''
+    print('[Deploy] Installing/checking Git and Docker on the VM', flush=True)
     ssh(s, 'sh -s', input=bootstrap)
+    print('[Deploy] Fetching the published main commit with Git', flush=True)
     checkout_release(s, repository, revision)
     prepare = ['python3', 'infra/deploy/prepare.py', '--domain', s['domain'], '--email', s['certificate_email'],
                '--admin-email', s['admin_email'], '--account', s['storage_account'], '--container', s['container']]
-    ssh(s, f'cd {release} && if [ ! -d {REMOTE}/shared/runtime ]; then {shlex.join(prepare)} && '
+    print('[Deploy] Preparing persistent runtime configuration', flush=True)
+    ssh(s, f'cd {release} && if [ ! -d {REMOTE}/shared/runtime ]; then '
+           f'if [ -L infra/deploy/runtime ]; then rm infra/deploy/runtime; fi; '
+           f'if [ ! -f infra/deploy/runtime/deploy.env ]; then {shlex.join(prepare)}; fi && '
            f'mv infra/deploy/runtime {REMOTE}/shared/runtime; fi && '
            f'ln -sfn {REMOTE}/shared/runtime infra/deploy/runtime')
-    # stdin to SSH, never command arguments, logs, Git, or shell history.
-    update = """import pathlib, os
-os.umask(0o077)
-p = pathlib.Path('/opt/mediamesh/shared/runtime/deploy.env')
-values = dict(line.split('=', 1) for line in p.read_text().splitlines() if '=' in line)
-values.update(CREDENTIALS)
-p.write_text(''.join(k + '=' + v + '\\n' for k, v in values.items()))
-p.chmod(0o600)
-""".replace('CREDENTIALS', repr({k: "'" + v + "'" for k, v in credentials.items()}))
-    ssh(s, 'python3 -', input=update)
-    # Back up existing databases before builds or Flyway migrations.
+    sync_runtime(s, credentials)
+    print('[Deploy] Backing up existing databases before migrations', flush=True)
+    # Start only PostgreSQL so redeploy also works after ./deploy stop.
     ssh(s, f'if [ -L {REMOTE}/current ]; then cd {REMOTE}/current; '
+           f'sudo ./infra/deploy/compose.sh up -d --wait --wait-timeout 120 postgres && '
            f'sudo ./infra/deploy/backup.sh; fi')
+    print('[Deploy] Building images sequentially, then waiting for service health (up to 20 minutes)', flush=True)
     ssh(s, f'cd {release} && sudo ./infra/deploy/compose.sh config --quiet && '
            'sudo ./infra/deploy/compose.sh --parallel 1 build && '
            'sudo ./infra/deploy/compose.sh up -d --wait --wait-timeout 1200')
+    sync_google(s, release)
     ssh(s, f'ln -sfn {release} {REMOTE}/current && cd {release} && sudo ./infra/deploy/compose.sh ps')
     print(f'Deployed {revision} to https://{s["domain"]}. Test Google login, upload, search and playback.')
 
 
+def wait_for_ssh(s):
+    print('[Deploy] Waiting for SSH readiness (up to 2 minutes)', flush=True)
+    for attempt in range(12):
+        result = subprocess.run(['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new',
+                                 '-o', 'ConnectTimeout=5', '-i', s['ssh_key'],
+                                 f"{s['ssh_user']}@{s['host']}", 'true'],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+        if result.returncode == 0:
+            return
+        if 'Permission denied' in result.stderr:
+            raise ValueError('SSH key authentication failed. If your key has a passphrase, run ssh-add with AZURE_SSH_KEY, then retry.')
+        if attempt < 11:
+            time.sleep(5)
+    raise ValueError('SSH is not reachable yet. Check VM running state and port 22, then rerun ./deploy.')
+
+
 def ensure_ssh_key(c):
     key = Path(c['ssh_key'])
+    if key.exists() and not Path(str(key) + '.pub').exists():
+        raise ValueError('SSH public key is missing. Restore the matching .pub file; do not overwrite your private key.')
     if not key.exists():
         key.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         run(['ssh-keygen', '-t', 'ed25519', '-f', key])
@@ -268,12 +363,12 @@ def ensure_ssh_key(c):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--env-file', default=str(ROOT / '.env.deploy'), help='Local dotenv file (default: project .env.deploy)')
-    p.add_argument('action', choices=['auto', 'provision', 'deploy', 'status', 'restart', 'stop', 'vm-stop', 'vm-start'])
+    p.add_argument('action', choices=['auto', 'provision', 'deploy', 'configure', 'logs', 'status', 'restart', 'stop', 'vm-stop', 'vm-start'])
     p.add_argument('services', nargs='*')
     args = p.parse_args()
     source = published_release() if args.action == 'auto' else None
     c = load_config(args.env_file)
-    credentials = deployment_credentials(args.env_file) if args.action in ['auto', 'deploy'] else None
+    credentials = deployment_credentials(args.env_file) if args.action in ['auto', 'deploy', 'configure'] else None
     if args.action == 'auto':
         try:
             run(['az', 'account', 'show', '--output', 'none'], capture=True)
@@ -281,8 +376,8 @@ def main():
             run(['az', 'login', '--output', 'none'])
     # Resolve name/GUID consistently, without switching the user's default subscription.
     c['subscription'] = az('account', 'show', '--subscription', c['subscription'])['id']
-    if args.services and args.action != 'restart':
-        p.error('Service names are supported only for restart')
+    if args.services and args.action not in ['restart', 'logs']:
+        p.error('Service names are supported only for restart and logs')
     allowed = {'edge', 'frontend', 'backend', 'postgres', 'keycloak', 'ml-api', 'ml-worker', 'prometheus'}
     if set(args.services) - allowed:
         p.error('Unknown service name')
@@ -292,6 +387,7 @@ def main():
             provision(c)
         s = state(c)
         print('Google OAuth redirect URI: ' + f'https://{s["domain"]}/auth/realms/mediamesh/broker/google/endpoint')
+        wait_for_ssh(s)
         deploy(s, credentials, source)
         return
     if args.action == 'provision':
@@ -301,11 +397,16 @@ def main():
     s = state(c)
     if args.action == 'deploy':
         deploy(s, credentials)
+    elif args.action == 'configure':
+        sync_runtime(s, credentials)
+        ssh(s, f'cd {REMOTE}/current && sudo ./infra/deploy/compose.sh up -d --no-build --wait --wait-timeout 300')
+        sync_google(s, f'{REMOTE}/current')
+        print('Applied current .env.deploy settings without rebuilding images. Sign in again to refresh account access.')
     elif args.action in ['vm-stop', 'vm-start']:
         az('vm', 'deallocate' if args.action == 'vm-stop' else 'start', '--subscription', s['subscription'],
            '--resource-group', s['resource_group'], '--name', s['vm_name'])
     else:
-        command = {'status': 'ps --all', 'stop': 'stop', 'restart': 'restart'}[args.action]
+        command = {'status': 'ps --all', 'stop': 'stop', 'restart': 'restart', 'logs': 'logs --tail=100'}[args.action]
         ssh(s, f'cd {REMOTE}/current && sudo ./infra/deploy/compose.sh {command} ' + shlex.join(args.services))
 
 
