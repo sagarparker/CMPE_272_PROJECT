@@ -141,8 +141,12 @@ services:
     depends_on:
       azurite: {condition: service_healthy}
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      additional_contexts:
+        evaluation: ./ml-service/evaluation
     environment:
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?Set ADMIN_EMAIL in your .env file}
       DATABASE_URL: jdbc:postgresql://postgres:5432/mediamesh
       DATABASE_USERNAME: mediamesh
       DATABASE_PASSWORD: local-development-only

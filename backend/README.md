@@ -28,7 +28,7 @@ local-only Azurite endpoint and the fixed public emulator credential.
 The configured OIDC provider must issue an API audience, stable subject, and
 `sid` session identifier. Users are mapped by `(issuer, subject)` to an internal
 UUID. The API requires Google broker sign-in with a verified email. The account
-`sagar.parker@sjsu.edu` receives the sole ADMIN role on first Google sign-in.
+the Google email configured by `ADMIN_EMAIL` receives the sole ADMIN role on first Google sign-in.
 Users submit `POST /api/me/access-request` with uploader/researcher roles; the
 administrator lists `/api/admin/access-requests` and posts an approval or rejection
 to `/api/admin/access-requests/{id}/decision`. No extra administrators or password

@@ -91,6 +91,14 @@ public class AzureBlobStorage implements MediaStorage {
         return blob.getBlobUrl()+"?"+blob.generateUserDelegationSas(values,signingKey());
     }
 
+    @Override public void store(String objectKey, String contentType, byte[] content) {
+        if (!objectKey.startsWith("assets/")) throw new IllegalArgumentException("Expected catalog object key");
+        if (content.length == 0 || content.length > maxBytes) throw new IllegalArgumentException("Media is empty or exceeds the size limit");
+        var options=new com.azure.storage.blob.options.BlobParallelUploadOptions(com.azure.core.util.BinaryData.fromBytes(content))
+                .setHeaders(new BlobHttpHeaders().setContentType(contentType));
+        container.getBlobClient(objectKey).uploadWithResponse(options,Duration.ofSeconds(60),Context.NONE);
+    }
+
     @Override public void verifyUpload(String objectKey, String mediaType) {
         try {
             var properties=container.getBlobClient(objectKey).getPropertiesWithResponse(null,DEADLINE,Context.NONE).getValue();

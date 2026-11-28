@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.sql.Timestamp;
 import java.util.*;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.stereotype.Service;
@@ -14,14 +15,18 @@ import org.springframework.http.HttpStatus;
 @Service
 public class IdentityService {
     public enum Role { ADMIN, UPLOADER, RESEARCHER }
+    /** Subject prefix of an administrator row reserved by the local demo seed (seed_demo.py). */
+    static final String PENDING_ADMIN_SUBJECT = "pending-google-admin:";
     public record User(UUID id, String email, String displayName, List<String> roles, boolean primaryAdmin,
             List<String> requestedRoles, String requestStatus) {}
     public record AccessRequest(UUID id, User user, List<String> roles, String status) {}
-    private static final String ADMIN_EMAIL = "sagar.parker@sjsu.edu";
+    private final String adminEmail;
     private final JdbcTemplate jdbc;
     private final KeycloakAccounts keycloak;
 
-    public IdentityService(JdbcTemplate jdbc, KeycloakAccounts keycloak) {
+    public IdentityService(JdbcTemplate jdbc, KeycloakAccounts keycloak,
+            @Value("${mediamesh.security.admin-email:}") String adminEmail) {
+        this.adminEmail = adminEmail.trim();
         this.jdbc = jdbc;
         this.keycloak = keycloak;
     }
@@ -34,8 +39,16 @@ public class IdentityService {
         String issuer = jwt.getIssuer().toString();
         String subject = jwt.getSubject();
         if (subject == null || subject.isBlank()) throw new OAuth2AuthenticationException("invalid_token");
-        boolean admin = ADMIN_EMAIL.equalsIgnoreCase(jwt.getClaimAsString("email"));
-        if (admin) jdbc.execute("SELECT pg_advisory_xact_lock(27201)");
+        boolean admin = !adminEmail.isEmpty() && adminEmail.equalsIgnoreCase(jwt.getClaimAsString("email"));
+        if (admin) {
+            jdbc.execute("SELECT pg_advisory_xact_lock(27201)");
+            // The local demo seed may reserve the administrator before any sign-in; bind it now.
+            jdbc.update("""
+                UPDATE users SET subject=? WHERE issuer=? AND subject=? AND deleted_at IS NULL
+                AND NOT EXISTS (SELECT 1 FROM users WHERE issuer=? AND subject=?)
+                """, subject, issuer, PENDING_ADMIN_SUBJECT + adminEmail.toLowerCase(Locale.ROOT),
+                issuer, subject);
+        }
         UUID candidate = UUID.randomUUID();
         jdbc.update("""
             INSERT INTO users(id, issuer, subject, email, display_name) VALUES (?,?,?,?,?)
@@ -48,6 +61,9 @@ public class IdentityService {
         if (jdbc.queryForObject("SELECT deleted_at IS NOT NULL FROM users WHERE id=?", Boolean.class, id))
             throw new OAuth2AuthenticationException("invalid_token");
         if (admin) {
+            // A configured administrator change must not leave the old account privileged.
+            jdbc.update("DELETE FROM user_roles WHERE role='ADMIN' AND user_id<>?", id);
+            jdbc.update("UPDATE users SET primary_admin=false WHERE primary_admin AND id<>?", id);
             jdbc.update("""
                 UPDATE users SET primary_admin=true WHERE id=?
                 AND NOT EXISTS (SELECT 1 FROM users WHERE primary_admin AND id<>?)
@@ -138,7 +154,7 @@ public class IdentityService {
         jdbc.execute("SELECT pg_advisory_xact_lock(27201)");
         User current = user(target);
         if (roles.contains(Role.ADMIN) != current.primaryAdmin())
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Administrator access is reserved for " + ADMIN_EMAIL);
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Administrator access is reserved for " + adminEmail);
         jdbc.update("DELETE FROM user_roles WHERE user_id=?", target);
         for (Role role : roles) jdbc.update("INSERT INTO user_roles VALUES (?,?)", target, role.name());
         audit(actor, "REPLACE_ROLES", target.toString(), roles.toString());

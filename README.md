@@ -24,14 +24,16 @@ download is needed. Track readiness with `./infra/manage.sh logs gemma-embed ml-
 Configure `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env` using the
 [Google OAuth setup](docs/ACCOUNT_SETUP.md), then select **Sign in with Google**.
 Users choose uploader, researcher, or both and wait for approval. Sign in as
-`sagar.parker@sjsu.edu` to open the sole administrator account and review requests.
+the Google email configured by `ADMIN_EMAIL` to open the sole administrator account and review requests.
 Admin does not implicitly receive upload or search access. Legacy local password
 fixtures are no longer accepted by the API.
 
-For a populated nature showcase, run `./infra/seed-demo.sh` using Node.js 24
-after starting the stack. It loads **500 photos and two videos** across wildlife,
-plants, oceans, marine life, birds and landscapes, with a dedicated uploader for
-each and a separate researcher. See the [demo accounts, setup and walkthrough](infra/demo/README.md)
+For a populated nature showcase, sign in as the administrator and use the
+**Seed** tab, which works locally and in deployment. Locally you can instead run
+`./infra/seed-demo.sh` using Node.js 24 after setting `ADMIN_EMAIL` in `.env`;
+no prior sign-in is needed on a fresh stack.
+Choose **20, 50, 100 or 500 images** (`./infra/seed-demo.sh 50`; default: 20),
+owned by the configured admin. See the [demo setup and usage](infra/demo/README.md)
 and [media attribution](ml-service/evaluation/DEMO_ATTRIBUTION.md).
 
 See [the runbook](infra/README.md) for testing and Azure deployment.
@@ -149,7 +151,7 @@ unchanged does **not** reproduce the local hybrid search path. See the
 | Search media | Only with RESEARCHER role | No | Yes | No |
 | Preview / download | Only with RESEARCHER role | No | Yes | No |
 
-Roles can be combined. Users sign in with Google and request uploader, researcher, or both roles. Requests appear in the admin portal and grant access only after approval. The sole administrator is `sagar.parker@sjsu.edu`, bootstrapped on verified Google sign-in. See [account setup](docs/ACCOUNT_SETUP.md).
+Roles can be combined. Users sign in with Google and request uploader, researcher, or both roles. Requests appear in the admin portal and grant access only after approval. The sole administrator is the Google email configured by `ADMIN_EMAIL`, bootstrapped on verified Google sign-in. See [account setup](docs/ACCOUNT_SETUP.md).
 
 ## Core workflows
 

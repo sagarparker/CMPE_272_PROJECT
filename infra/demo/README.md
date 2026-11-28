@@ -1,128 +1,98 @@
 # Nature showcase dataset
 
-The local demo has **500 photographs and two short wildlife videos** across six
-domains. Photos come from Wikimedia Commons, with 452 additions selected from
-its featured photography galleries. Videos come from the US National Park
-Service. Each asset retains its actual creator, source and license.
+The manifest contains 500 photographs across six nature domains, plus two legacy
+wildlife videos. The seed command now selects **images only**, owned by the sole
+Google administrator. It creates no dummy users or password-based logins.
 
-## Run and populate
+## Seed tab (local and deployed)
 
-Start Docker Desktop, then use Node.js 24 LTS:
+Sign in with Google as `ADMIN_EMAIL` and open the **Seed** tab. Choose 20, 50,
+100 or 500 images and select **Load**. The backend downloads the checksum-pinned
+images from Wikimedia, writes them to the storage it is configured with (Azurite
+locally, the Azure Blob container in deployment), and queues normal indexing jobs.
+The images are owned by your administrator account. The tab shows how many
+are stored, indexing and ready, and updates every few seconds; you can leave the
+page while it runs.
+
+One run happens at a time. Starting again resumes an interrupted run and skips
+images already in the library, including ones added by `./infra/seed-demo.sh`,
+because both use the same asset IDs. Images that failed indexing are counted but
+not retried; check the ML worker logs. Captions use OpenRouter credit when
+`ML_CAPTION_ENABLED` is on. In deployment, the VM needs outbound HTTPS to
+Wikimedia, and its managed identity already has the required **Storage Blob
+Data Contributor** role on the container. To browse the images in Search,
+enable the Researcher role for yourself on the Admin tab.
+
+The backend bundles `ml-service/evaluation/demo-manifest.json` at build time
+(Maven resource plus the `evaluation` Docker build context), so rebuild the
+backend after changing the manifest.
+
+## Command-line seed (local only, no sign-in)
+
+Set `ADMIN_EMAIL` to your Google email in the root `.env`, alongside the existing
+Google OAuth credentials and `ML_OPENROUTER_API_KEY`. You do not need to sign in
+before seeding. On a fresh catalog the seed reserves the administrator account for
+`ADMIN_EMAIL` and owns the images with it; your first Google sign-in as that email
+claims the reserved account, including its images and ADMIN role. If the email
+already has an account, or a different administrator is registered, the seed stops
+and asks you to sign in first so the backend handles the handover. To browse
+Contributions or Search, grant your own account Uploader/Researcher roles from
+Admin; ADMIN does not implicitly include those roles. Rebuild the backend if
+changing `ADMIN_EMAIL` on an existing stack.
+
+With Docker running and Node.js 22+ (24 LTS recommended):
 
 ```bash
-./infra/start.sh
-nvm use 24 # if you manage Node with nvm
-./infra/seed-demo.sh
+./infra/seed-demo.sh       # 20 images by default
+./infra/seed-demo.sh 20
+./infra/seed-demo.sh 50
+./infra/seed-demo.sh 100
+./infra/seed-demo.sh 500
 ```
 
-The script downloads checksum-pinned media, installs the existing frontend test
-dependencies and Chromium, provisions local identities, and uploads through the
-authenticated API and signed Blob SAS URLs. The first run needs network access.
-Download and indexing time depend on the network, the local embedding model and
-the hosted caption provider. Open **http://localhost:8080** after the script
-reports `READY 502/502` and completes verification.
+Change `DEFAULT_IMAGES` inside `infra/seed-demo.sh` to change the default. Other
+counts fail before any stack operations. The script builds/starts the stack,
+validates the hosted caption model, downloads only the selected checksum-pinned
+images, uploads to Azurite and queues normal indexing jobs. Local operator
+provisioning writes the catalog directly; app sign-in continues to require
+verified Google authentication. No browser or frontend dependency installation
+is needed for seeding.
 
-| Username | Role | Preloaded collection |
-|---|---|---|
-| `demo.wildlife` | UPLOADER | 120 photos of mammals, reptiles, amphibians and insects, plus bison and grizzly videos |
-| `demo.plants` | UPLOADER | 75 photos of wildflowers, trees, succulents and other plants |
-| `demo.oceans` | UPLOADER | 45 photos of waves, beaches, coastal cliffs, sea ice and mangroves |
-| `demo.marine` | UPLOADER | 75 photos of sea turtles, whales, seals, reef fish, sharks and invertebrates |
-| `demo.birds` | UPLOADER | 110 photos of raptors, seabirds, songbirds and other birds |
-| `demo.landscapes` | UPLOADER | 75 photos of mountains, waterfalls, glaciers, deserts and volcanoes |
-| `demo.researcher` | RESEARCHER | Searches all READY assets; owns no uploads |
+To rerun against an already built/running stack:
 
-All seven use the public **local-only password `local-demo-only`**. Sign out
-between identities or use separate browser profiles. Existing accounts are
-preserved. `admin` can inspect the new users and grants. These fixtures must
-never be used as real deployment credentials.
+```bash
+npm --prefix frontend run seed:demo -- --images 50
+```
 
-## Presentation walkthrough
+The deterministic subsets cover all six domains and are nested: increasing from
+20 to 50 reuses the first 20 images. Reruns reuse existing assets and resume
+interrupted uploads. Selecting a smaller count does not delete images from a
+previous larger run or unrelated uploads. FAILED jobs stop the run for inspection.
+The worker gets up to two hours to finish; missing captions/current embeddings
+are then backfilled only for the selected IDs. The final counts and asset IDs
+are saved in ignored `ml-service/data/demo/seed-report.json`.
 
-1. Sign in as `demo.plants` and browse the READY plant assets. Open **Edit** to
-   show contributor and rights notes. Switch to `demo.wildlife` to show another
-   owner's collection, including videos.
-2. Sign in as `demo.researcher`. Search `yellow sunflower`, `sea turtle
-   underwater`, `a puffin bird`, `ocean waves`, or `elephants drinking at a
-   watering hole`. Preview a result and inspect its credit.
-3. Try `a waterfall surrounded by green rainforest` to find the Eden Project
-   waterfall photo by its visual content. This curated
-   showcase is separate from the existing retrieval evaluation manifests and
-   does not establish accuracy on a held-out benchmark.
-4. Use the existing reliability demonstrations separately to show the SLO,
-   failure responses, circuit breaker and bulkhead.
+## Legacy dummy users
 
-## Implementation checkpoints
+Fresh realm imports contain only the Keycloak provisioner service account.
+`accounts.json` is kept only to identify old local demo logins for cleanup. On
+an existing local stack the seed removes those seven dummy logins and the old
+`admin`, `uploader`, `researcher`, and `employee` password logins. It transfers
+their existing uploads to the configured administrator, revokes application
+roles/sessions, and hides their application records while preserving audit history.
+A changed email or Google-linked legacy identity stops cleanup for inspection.
+Real Google users and the Keycloak administrative/service accounts are preserved.
+The old cloud dummy-account provisioning command is retired.
 
-**1. Curation:**
+## Sources and limits
+
 [`demo-manifest.json`](../../ml-service/evaluation/demo-manifest.json) records
-domain, caption, original source title, creator, license and SHA-256. Unknown
-dates and locations remain unset. Media bytes live in ignored
-`ml-service/data/demo/`, outside Git. See the
-[attribution guide](../../ml-service/evaluation/DEMO_ATTRIBUTION.md).
-
-**2. Identities and ownership:**
-[`accounts.json`](accounts.json) defines six uploaders and one researcher. The
-local Keycloak Admin API creates missing identities; real OIDC browser sign-in
-registers them with MediaMesh. The existing admin assigns roles through the
-normal admin API. Browser password grants remain disabled. Fresh realm imports
-also include these identities; existing volumes do not need to be reset.
-Domain grouping uses ownership and title prefixes, without a new database schema.
-
-**3. Upload and verification:**
-[`seed-demo.mjs`](../../frontend/scripts/seed-demo.mjs) initiates uploads, PUTs
-files directly to the local Blob Storage emulator using signed URLs, and calls
-the completion endpoint. The backend verifies the stored blob before it queues
-indexing. The worker reads the blob, creates Gemma image/frame embeddings and
-visual descriptions, and marks the asset READY. The normal frontend upload
-follows the same sequence. Before search checks, the script fills any missing
-captions and embeddings for the exact seeded IDs and verifies that their
-semantic text embeddings reflect the current descriptions. The script checks all catalog counts, cross-uploader
-read denial, uploader search denial, six search prompts, signed access and a
-rendered photo preview. The uploader check visits every catalog page.
-
-## Reruns and limits
-
-Reruns reuse existing fixture accounts and assets and reapply only these seven
-accounts' roles. Identity collisions stop the run rather than overwrite a user.
-The ignored `upload-state.json` stores asset IDs, owner IDs and checksums;
-`seed-report.json` stores counts and search rankings. Tokens and signed URLs
-are never saved in either file. If state is missing, assets can be rediscovered
-by title and source credit; avoid editing seeded metadata before rediscovery.
-
-Changed checksums or FAILED jobs stop the run for investigation. Interruption
-after initiation but before the Blob PUT finishes can leave an UPLOADING asset
-without an object: completion fails and the script stops. Inspect that asset
-before retrying; the script does not silently duplicate it or bypass validation.
-
-Seeding is restricted to the local development Compose stack and Azurite emulator;
-it does not populate the cloud storage account. Keep Compose volumes to preserve the prepared demo.
-Deleting volumes removes identities, objects and catalog state; repopulate a
-fresh stack with the same command. Source files can disappear or change;
-checksum failure requires reviewing any replacement and its rights.
-
+creator, source, license, domain and SHA-256. Image bytes stay in ignored
+`ml-service/data/demo/`. See the [attribution guide](../../ml-service/evaluation/DEMO_ATTRIBUTION.md).
 Retain credits and applicable license terms, including CC BY-SA requirements.
-Public-domain labels reflect the source's statement; other rights or
-jurisdictional restrictions can apply. This is not National Geographic content
-or an official NatGeo collection. Review source terms before publication.
 
-
-### Caption generation prerequisites
-
-Set `ML_OPENROUTER_API_KEY` in the ignored root `.env`, then run
-`./infra/seed-demo.sh`. It starts/rebuilds the stack and enables captioning with
-`google/gemma-4-26b-a4b-it`. The preflight validates the key and model's image
-and structured-output capabilities without generating a paid completion.
-No local caption model is installed. Hosted captions and search checks consume
-OpenRouter credit; all image/query/metadata embeddings stay on EmbeddingGemma 2.
-
-A missing key, unavailable hosted model or incomplete generation fails the seed
-explicitly. The existing queue handles temporary provider failures with retries.
-
-Fresh uploads generate descriptions during asynchronous processing. Existing
-READY fixture assets receive any missing descriptions and current image/frame
-embeddings through `mediamesh_ml.seed_enrich`; their text embeddings are then
-refreshed. Existing generated descriptions and user-written metadata are kept.
-Only seed asset IDs are enriched, so unrelated uploads with missing media do not
-block a demo rerun. The READY wait gives a fresh dataset up to two hours for CPU
-inference. Interrupted runs can resume.
+Seeding is restricted to the local development Compose database and Azurite.
+Caption generation consumes OpenRouter credit; image and metadata embeddings
+stay local. Source URLs can disappear or change; checksum failures require
+reviewing the replacement and its rights. Keep Compose volumes to preserve
+users, media and indexing state.

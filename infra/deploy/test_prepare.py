@@ -28,6 +28,8 @@ class DeploymentTests(unittest.TestCase):
             people = [u for u in realm["users"] if not u.get("serviceAccountClientId")]
             self.assertEqual(people, [])
             self.assertNotIn("BOOTSTRAP_ADMIN_SUBJECT", env)
+            self.assertEqual(env["ADMIN_EMAIL"], "owner@mediamesh-demo.org")
+            self.assertIn("owner@mediamesh-demo.org", (output / "first-login.txt").read_text())
             self.assertIn("GOOGLE_CLIENT_ID", env)
             self.assertEqual(realm["identityProviders"][0]["alias"], "google")
             [service] = [u for u in realm["users"] if u.get("serviceAccountClientId")]
@@ -115,6 +117,10 @@ class DeploymentTests(unittest.TestCase):
             )
             config = json.loads(result.stdout)
             self.assertEqual(config["name"], "mediamesh-deploy")
+            self.assertEqual(
+                config["services"]["backend"]["environment"]["ADMIN_EMAIL"],
+                "owner@mediamesh-demo.org",
+            )
             services = config["services"]
             self.assertNotIn("s3", services)
             self.assertEqual(

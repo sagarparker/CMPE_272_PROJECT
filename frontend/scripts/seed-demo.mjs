@@ -1,253 +1,29 @@
-// Local demo provisioning only. Uses public fixture credentials; tokens stay in memory.
-import { chromium, expect } from "@playwright/test";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
-import { createHash } from "node:crypto";
+// Local operator provisioning; Google authentication remains required by the app.
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
+import path from "node:path";
 
-const root=fileURLToPath(new URL("../../",import.meta.url));
-const base="http://localhost:8080";
-const cache=path.join(root,"ml-service/data/demo");
-const fixture=JSON.parse(await readFile(path.join(root,"infra/demo/accounts.json"),"utf8"));
-const manifest=JSON.parse(await readFile(path.join(root,"ml-service/evaluation/demo-manifest.json"),"utf8"));
-const uploaders=fixture.accounts.filter(account=>account.domain);
-const catalogPageSize=50;
-const indexingTimeout=2*60*60*1000;
-const config=JSON.parse(execFileSync("docker",["compose","config","--format","json"],{cwd:root,encoding:"utf8"}));
-if(config.name!=="mediamesh" || !config.services.keycloak.command.includes("start-dev"))
+const root = fileURLToPath(new URL("../../", import.meta.url));
+const { values } = parseArgs({ options: {
+  images: { type: "string", default: "20" },
+  help: { type: "boolean", short: "h" },
+} });
+if (values.help) {
+  console.log("Usage: npm run seed:demo -- --images <20|50|100|500> (default: 20)");
+  process.exit(0);
+}
+if (!["20", "50", "100", "500"].includes(values.images))
+  throw new Error("--images must be 20, 50, 100 or 500");
+const config = JSON.parse(execFileSync("docker", ["compose", "config", "--format", "json"], {
+  cwd: root, encoding: "utf8",
+}));
+if (config.name !== "mediamesh" || !config.services.keycloak.command.includes("start-dev"))
   throw new Error("Demo seeding requires the local development Compose stack");
-const endpoint=execFileSync("docker",["compose","exec","-T","backend","printenv","AZURE_EMULATOR_ENDPOINT"],{cwd:root,encoding:"utf8"}).trim();
-if(endpoint!=="http://azurite:10000/devstoreaccount1") throw new Error("Demo seeding is restricted to the local Azure Blob emulator");
-
-// Validate files before creating users or assets.
-for(const item of manifest.items){
-  if(path.basename(item.filename)!==item.filename) throw new Error("Unsafe media filename");
-  const bytes=await readFile(path.join(cache,item.filename));
-  if(createHash("sha256").update(bytes).digest("hex")!==item.sha256)
-    throw new Error(`Checksum mismatch: ${item.id}`);
-  if(!item.creator || !item.license || !item.source_page) throw new Error(`Missing credits: ${item.id}`);
-}
-
-async function provider(route,options={}){
-  const response=await fetch(base+"/auth"+route,{...options,signal:AbortSignal.timeout(10000)});
-  if(!response.ok){
-    const detail=await response.json().catch(()=>({}));
-    throw new Error(`Local identity provisioning failed (${response.status}): ${detail.errorMessage || detail.error || "unknown error"}`);
-  }
-  return response.status===204 || response.headers.get("content-length")==="0" ? null : response.json().catch(()=>null);
-}
-const authentication=await provider("/realms/master/protocol/openid-connect/token",{
-  method:"POST",body:new URLSearchParams({client_id:"admin-cli",grant_type:"password",username:"local-admin",password:"local-development-only"}),
-});
-for(const account of fixture.accounts){
-  const headers={Authorization:`Bearer ${authentication.access_token}`,"Content-Type":"application/json"};
-  const found=await provider(`/admin/realms/mediamesh/users?exact=true&username=${encodeURIComponent(account.username)}`,{headers});
-  if(found.length){
-    if(found[0].email!==account.email || found[0].lastName!==account.lastName)
-      throw new Error(`Existing user does not match the demo fixture: ${account.username}`);
-  }else{
-    await provider("/admin/realms/mediamesh/users",{method:"POST",headers,body:JSON.stringify({
-      username:account.username,firstName:account.firstName,lastName:account.lastName,email:account.email,
-      enabled:true,emailVerified:true,credentials:[{type:"password",value:fixture.localDemoPassword,temporary:false}],
-    })});
-    console.log(`Created local account ${account.username}`);
-  }
-}
-
-const browser=await chromium.launch({headless:true});
-const contexts=[];
-async function login(username){
-  const context=await browser.newContext();contexts.push(context);
-  const page=await context.newPage();
-  const account={username,page,token:null,profile:null,signedInAt:Date.now()};
-  page.on("request",request=>{if(request.url().endsWith("/api/me")) account.token=request.headers().authorization;});
-  await page.goto(base,{timeout:30000});
-  await page.locator("#username").fill(username);
-  await page.locator("#password").fill(fixture.localDemoPassword);
-  await page.locator("#kc-login").click();
-  await page.getByRole("button",{name:"Sign out"}).waitFor({timeout:30000});
-  if(!account.token) throw new Error(`No authenticated API session for ${username}`);
-  account.profile=await api(account,"GET","/me");
-  return account;
-}
-async function renewSession(account){
-  const renewed=await login(account.username);
-  if(renewed.profile.id!==account.profile.id)
-    throw new Error(`Demo identity changed while renewing ${account.username}`);
-  const previous=account.page.context();
-  account.page=renewed.page;
-  account.token=renewed.token;
-  account.signedInAt=renewed.signedInAt;
-  account.page.on("request",request=>{if(request.url().endsWith("/api/me")) account.token=request.headers().authorization;});
-  await previous.close();
-  console.log(`Renewed demo session: ${account.username}`);
-}
-async function api(account,method,route,data){
-  // Long indexing runs outlast the UI inactivity timer. Use a fresh browser
-  // login, preserving the application's normal token and session limits.
-  if(account.profile && Date.now()-account.signedInAt>10*60*1000)
-    await renewSession(account);
-  const request=()=>account.page.request.fetch(base+"/api"+route,{
-    method,headers:{Authorization:account.token},...(data===undefined?{}:{data}),
-    timeout: route === "/search" ? 45000 : 20000,
-  });
-  let response=await request();
-  if(response.status()===401 && account.profile){
-    await response.dispose();
-    await renewSession(account);
-    response=await request();
-  }
-  try{
-    if(!response.ok()) throw new Error(`API ${method} ${route} failed (${response.status()})`);
-    return await response.json();
-  }finally{
-    await response.dispose();
-  }
-}
-async function listOwnedAssets(user){
-  const assets=[];
-  for(let offset=0;;offset+=catalogPageSize){
-    const page=await api(user,"GET",`/assets?offset=${offset}`);
-    assets.push(...page);
-    if(page.length<catalogPageSize) return assets;
-  }
-}
-const statePath=path.join(cache,"upload-state.json");
-let state;
-try{state=JSON.parse(await readFile(statePath,"utf8"));}catch(error){if(error.code!=="ENOENT") throw error;state={version:1,assets:{}};}
-async function save(){await mkdir(cache,{recursive:true});await writeFile(statePath+".tmp",JSON.stringify(state,null,2)+"\n");await import("node:fs/promises").then(fs=>fs.rename(statePath+".tmp",statePath));}
-function credit(item){
-  return `${item.license}. Credit: ${item.creator}. Source: ${item.source_page}. License: ${item.license_url || item.source_page}. Curated for the MediaMesh educational demo; verify rights before publication.`;
-}
-const uploaded=[];
-try{
-  const admin=await login("admin");
-  const users=new Map();
-  for(const fixtureUser of fixture.accounts){
-    const user=await login(fixtureUser.username);
-    await api(admin,"PUT",`/admin/users/${user.profile.id}/roles`,{roles:fixtureUser.roles});
-    users.set(fixtureUser.username,user);
-  }
-  for(const fixtureUser of uploaders){
-    const user=users.get(fixtureUser.username);
-    const owned=await listOwnedAssets(user);
-    const ownedById=new Map(owned.map(asset=>[asset.assetId,asset]));
-    for(const item of manifest.items.filter(item=>item.domain===fixtureUser.domain)){
-      const title=`${item.domain[0].toUpperCase()+item.domain.slice(1)} | ${item.title}`.slice(0,255);
-      let entry=state.assets[item.id];
-      if(entry && entry.sha256!==item.sha256) throw new Error(`Seed source changed: ${item.id}; review before replacing it`);
-      let current=entry?.ownerId===user.profile.id ? ownedById.get(entry.assetId) : undefined;
-      if(!current) entry=null;
-      if(!entry){
-        current=owned.find(asset=>asset.title===title && asset.usageNote?.includes(item.source_page));
-        if(current) entry={assetId:current.assetId,ownerId:user.profile.id,sha256:item.sha256};
-      }
-      const contentType=item.mediaType==="video"?"video/mp4":"image/jpeg";
-      if(!entry){
-        const initiated=await api(user,"POST","/assets/initiate",{
-          filename:item.filename,contentType,title,description:item.description || item.title,
-          species:item.species || null,location:item.location || null,capturedAt:item.capturedAt || null,
-          contributor:item.creator,usageNote:credit(item),
-        });
-        entry={assetId:initiated.assetId,ownerId:user.profile.id,sha256:item.sha256};
-        state.assets[item.id]=entry;await save();
-        const response=await user.page.request.put(initiated.uploadUrl,{
-          headers:{...initiated.uploadHeaders,"Content-Type":contentType,"If-None-Match":"*"},
-          data:await readFile(path.join(cache,item.filename)),timeout:120000,
-        });
-        try{
-          if(!response.ok()) throw new Error(`Blob upload failed for ${item.id} (${response.status()})`);
-        }finally{
-          await response.dispose();
-        }
-        await api(user,"POST",`/assets/${entry.assetId}/complete`);
-      }else if(current.processingStatus==="UPLOADING"){
-        // A completed PUT can safely be finalized after an interrupted seed run.
-        await api(user,"POST",`/assets/${entry.assetId}/complete`);
-      }else if(current.processingStatus==="FAILED"){
-        throw new Error(`Indexing previously failed for ${item.id}; inspect worker logs before retrying`);
-      }
-      state.assets[item.id]=entry;await save();uploaded.push({item,entry,user});
-      console.log(`${fixtureUser.username}: ${item.id}`);
-    }
-  }
-  const deadline=Date.now()+indexingTimeout;
-  let pending=[...uploaded];
-  while(pending.length){
-    const statusById=new Map();
-    for(const user of new Set(pending.map(asset=>asset.user))){
-      for(const asset of await listOwnedAssets(user)){
-        statusById.set(asset.assetId,asset.processingStatus);
-      }
-    }
-    const remaining=[];
-    for(const asset of pending){
-      const status=statusById.get(asset.entry.assetId);
-      if(!status) throw new Error(`Demo asset disappeared: ${asset.item.id}`);
-      if(status==="FAILED") throw new Error(`Indexing failed: ${asset.item.id}`);
-      if(status!=="READY") remaining.push(asset);
-    }
-    console.log(`READY ${uploaded.length-remaining.length}/${uploaded.length}`);
-    pending=remaining;
-    if(pending.length){if(Date.now()>deadline) throw new Error("Indexing did not finish; rerun to resume");await new Promise(resolve=>setTimeout(resolve,2000));}
-  }
-  // READY alone is insufficient after changing models or enabling descriptions.
-  // Explicit IDs keep unrelated user uploads outside this resumable backfill.
-  execFileSync("docker",["compose","run","--rm","--no-deps","-T","ml-worker",
-    "python","-u","-m","mediamesh_ml.seed_enrich"],{
-    cwd:root,input:JSON.stringify(uploaded.map(asset=>asset.entry.assetId)),
-    stdio:["pipe","inherit","inherit"],timeout:indexingTimeout,
-  });
-  for(const asset of uploaded){
-    const current=await api(asset.user,"GET",`/assets/${asset.entry.assetId}`);
-    if(!current.generatedDescription?.trim()) throw new Error(`Missing visual description: ${asset.item.id}`);
-  }
-  const researcher=users.get("demo.researcher");
-  for(const fixtureUser of uploaders){
-    const user=users.get(fixtureUser.username);
-    const assets=await listOwnedAssets(user);
-    const expectedIds=new Set(uploaded.filter(asset=>asset.user===user).map(asset=>asset.entry.assetId));
-    if(assets.some(asset=>asset.ownerId!==user.profile.id || !expectedIds.delete(asset.assetId)) || expectedIds.size)
-      throw new Error(`Unexpected catalog ownership or duplicates for ${fixtureUser.username}`);
-    await user.page.reload();
-    await user.page.getByRole("heading",{name:"Contribute to the archive"}).waitFor();
-    const titles=user.page.locator(".asset-row strong");
-    for(let offset=0;offset<assets.length;offset+=catalogPageSize){
-      if(offset) await user.page.getByRole("button",{name:"Next",exact:true}).click();
-      const pageTitles=assets.slice(offset,offset+catalogPageSize).map(asset=>asset.title);
-      await expect(titles).toHaveText(pageTitles);
-    }
-  }
-  const plants=users.get("demo.plants");
-  const crossOwner=await plants.page.request.get(base+`/api/assets/${uploaded[0].entry.assetId}`,{headers:{Authorization:plants.token}});
-  if(![403,404].includes(crossOwner.status())) throw new Error("Uploader ownership isolation failed");
-  const deniedSearch=await plants.page.request.post(base+"/api/search",{headers:{Authorization:plants.token},data:{query:"flowers"}});
-  if(deniedSearch.status()!==403) throw new Error("Uploader unexpectedly has researcher access");
-  const queries=["elephants drinking at a watering hole","yellow sunflower","ocean waves","sea turtle underwater","a puffin bird","a waterfall surrounded by green rainforest"];
-  const searchChecks=[];
-  for(const query of queries){
-    const response=await api(researcher,"POST","/search",{query,limit:10});
-    searchChecks.push({query,results:response.results.map(result=>({assetId:result.assetId,title:result.title,score:result.score}))});
-    if(!response.results.length) throw new Error("Expected searchable demo media");
-  }
-  const sample=uploaded[0];
-  const access=await api(researcher,"POST",`/assets/${sample.entry.assetId}/access-url`);
-  const preview=await researcher.page.request.get(access.url,{timeout:15000});
-  if(!preview.ok()) throw new Error("Signed preview failed");
-  await researcher.page.reload();
-  await researcher.page.getByLabel("Describe what you need").fill("yellow sunflower");
-  await researcher.page.getByRole("button",{name:"Search archive"}).click();
-  const photo=researcher.page.locator(".result").filter({has:researcher.page.locator(".media-pill",{hasText:"Photograph"})}).first();
-  await photo.getByRole("button",{name:"Preview",exact:true}).click({timeout:45000});
-  const image=researcher.page.getByRole("dialog",{name:"Media preview"}).getByRole("img");
-  await image.waitFor();
-  await image.evaluate(img=>img.decode());
-  if(await image.evaluate(img=>img.naturalWidth)<=0) throw new Error("Demo preview did not render");
-  const videos=uploaded.filter(asset=>asset.item.mediaType==="video").length;
-  const report={seededAt:new Date().toISOString(),ready:uploaded.length,photos:uploaded.length-videos,videos,accounts:fixture.accounts.map(a=>({username:a.username,domain:a.domain,roles:a.roles})),domains:Object.fromEntries(uploaders.map(a=>[a.domain,uploaded.filter(x=>x.item.domain===a.domain).length])),searchChecks};
-  await writeFile(path.join(cache,"seed-report.json"),JSON.stringify(report,null,2)+"\n");
-  console.log(JSON.stringify({ready:report.ready,photos:report.photos,videos:report.videos,domains:report.domains},null,2));
-}finally{
-  await Promise.all(contexts.map(context=>context.close()));await browser.close();
-}
+execFileSync("docker", ["compose", "run", "--rm", "--no-deps", "-T",
+  "-e", `ADMIN_EMAIL=${config.services.backend.environment.ADMIN_EMAIL}`,
+  "-v", `${path.join(root, "ml-service/data/demo")}:/data/demo`,
+  "-v", `${path.join(root, "ml-service/evaluation")}:/evaluation:ro`,
+  "-v", `${path.join(root, "infra/demo")}:/demo-config:ro`,
+  "ml-worker", "python", "-u", "-m", "mediamesh_ml.seed_demo", "--images", values.images,
+], { cwd: root, stdio: "inherit" });

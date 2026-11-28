@@ -5,6 +5,8 @@ COPY scripts/mvn-retry.sh /usr/local/bin/mvn-retry
 COPY pom.xml .
 RUN --mount=type=cache,target=/root/.m2,sharing=locked sh /usr/local/bin/mvn-retry dependency:go-offline
 COPY src src
+# Seed tab manifest; compose passes ml-service/evaluation as the "evaluation" build context.
+COPY --from=evaluation demo-manifest.json /ml-service/evaluation/demo-manifest.json
 RUN --mount=type=cache,target=/root/.m2,sharing=locked sh /usr/local/bin/mvn-retry -DskipTests package
 FROM eclipse-temurin:17-jre AS runtime-base
 WORKDIR /app

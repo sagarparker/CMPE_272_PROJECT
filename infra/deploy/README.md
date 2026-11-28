@@ -96,7 +96,7 @@ the supplied project is `mathewpius19/Media-Mesh`. Do not push to the wrong repo
 python3 infra/deploy/prepare.py \
   --domain archive.your-domain.org \
   --email operations@your-domain.org \
-  --admin-email sagar.parker@sjsu.edu \
+  --admin-email you@example.com \
   --account YOURLOWERCASESTORAGEACCOUNT \
   --container mediamesh
 # Before starting, add ML_OPENROUTER_API_KEY to the private runtime/deploy.env.
@@ -138,7 +138,7 @@ Discovery must advertise exactly your HTTPS issuer. Anonymous `/api/me` returns
 401; `/actuator/prometheus` and `/auth/admin/` return 404 publicly. Read the initial
 Google sign-in configuration from [account setup](../../docs/ACCOUNT_SETUP.md).
 Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `runtime/deploy.env`, register
-the hosted broker redirect URI, and sign in as `sagar.parker@sjsu.edu`. The
+the hosted broker redirect URI, and sign in as the Google email configured by `ADMIN_EMAIL`. The
 application creates its sole administrator from that verified Google login.
 There is no temporary application password or additional administrator creation.
 
@@ -151,7 +151,7 @@ prompt; use the generated private management password):
 ```
 
 Application access now follows the Google request/approval flow. Only
-`sagar.parker@sjsu.edu` receives ADMIN. See [account setup](../../docs/ACCOUNT_SETUP.md)
+the Google email configured by `ADMIN_EMAIL` receives ADMIN. See [account setup](../../docs/ACCOUNT_SETUP.md)
 for existing-realm migration and role approval.
 
 The backend deletes retired sign-in identities through the `mediamesh-provisioner` client, whose
@@ -244,7 +244,11 @@ References: [Student credit terms](https://learn.microsoft.com/azure/education-h
 [Java user-delegation SAS](https://learn.microsoft.com/azure/storage/blobs/storage-blob-user-delegation-sas-create-java),
 [Python managed identity](https://learn.microsoft.com/azure/developer/python/sdk/authentication-azure-hosted-apps).
 
-For the curated collection, follow [the demo transfer runbook](../../docs/AZURE_DEMO_DATA_TRANSFER.md). Its explicit cloud importer uses private credentials; the localhost seeder remains restricted to Azurite.
+For the curated collection, sign in as `ADMIN_EMAIL` and use the **Seed** tab; see
+[the demo dataset guide](../demo/README.md). It writes to this deployment's Blob
+container with the VM managed identity and needs outbound HTTPS to Wikimedia. Run
+`sudo ./infra/deploy/backup.sh` first. The localhost command-line seeder remains
+restricted to Azurite.
 
 
 ## Search parity with the integrated stack

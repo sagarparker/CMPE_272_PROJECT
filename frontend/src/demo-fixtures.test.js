@@ -31,19 +31,8 @@ test("demo media have distinct pinned sources, credits and valid upload metadata
   }
 });
 
-test("each demo domain has its own uploader; researcher and browser login stay least privilege", () => {
-  const uploaders = fixture.accounts.filter(account => account.domain);
-  const collectionSizes = { wildlife: 122, plants: 75, oceans: 45, marine: 75, birds: 110, landscapes: 75 };
-  assert.equal(uploaders.length, 6);
-  assert.equal(new Set(uploaders.map(account => account.domain)).size, 6);
-  for (const account of fixture.accounts) {
-    assert.deepEqual(account.roles, account.domain ? ["UPLOADER"] : ["RESEARCHER"]);
-    const imported = realm.users.find(user => user.username === account.username);
-    assert.equal(imported.email, account.email);
-    assert.equal(imported.lastName, account.lastName);
-    if (account.domain)
-      assert.equal(manifest.items.filter(item => item.domain === account.domain).length,
-        collectionSizes[account.domain]);
-  }
+test("realm imports only the provisioner; legacy accounts are retained for cleanup only", () => {
+  assert.ok(realm.users.every(user => user.serviceAccountClientId));
+  assert.equal(fixture.accounts.length, 7);
   assert.equal(realm.clients.find(client => client.clientId === "mediamesh-web").directAccessGrantsEnabled, false);
 });

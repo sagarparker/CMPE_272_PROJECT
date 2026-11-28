@@ -26,6 +26,25 @@ def read_manifest(path: Path) -> list[dict]:
     return items
 
 
+IMAGE_COUNTS = (20, 50, 100, 500)
+
+
+def select_images(items: list[dict], count: int) -> list[dict]:
+    """Stable, nested subsets spread across domains, without demo videos."""
+    if count not in IMAGE_COUNTS:
+        raise ValueError("Image count must be 20, 50, 100 or 500")
+    groups = {}
+    for item in items:
+        if item.get("mediaType", "image") == "image":
+            groups.setdefault(item["domain"], []).append(item)
+    ordered = []
+    for index in range(max((len(group) for group in groups.values()), default=0)):
+        ordered.extend(group[index] for group in groups.values() if index < len(group))
+    if len(ordered) < count:
+        raise ValueError(f"Manifest has only {len(ordered)} images; requested {count}")
+    return ordered[:count]
+
+
 def download(item: dict, directory: Path) -> Path:
     expected = item["sha256"]
     if not expected or len(expected) != 64:
@@ -57,9 +76,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, default=Path("evaluation/manifest.json"))
     parser.add_argument("--directory", type=Path, default=Path("/data/media"))
+    parser.add_argument("--images", type=int, choices=IMAGE_COUNTS)
     args = parser.parse_args()
     args.directory.mkdir(parents=True, exist_ok=True)
-    for item in read_manifest(args.manifest):
+    items = read_manifest(args.manifest)
+    if args.images is not None:
+        items = select_images(items, args.images)
+    for item in items:
         print(download(item, args.directory), flush=True)
 
 

@@ -778,6 +778,22 @@ footer { color: var(--muted); font-size: 10px; border-top: 1px solid var(--line)
 
 .admin-self-roles { margin-top: 26px; }
 
+/* Seed tab */
+.seed-body { display: grid; grid-template-columns: auto minmax(220px, 1fr) auto; align-items: center; gap: 28px; padding: 24px; }
+.seed-options { display: flex; flex-wrap: wrap; gap: 8px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.seed-options .admin-role-toggle { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #e0e5db; border-radius: 6px; background: #fff; padding: 8px 11px; margin: 0; font-size: 12px; font-weight: 400; color: #7a8574; cursor: pointer; }
+.seed-options .admin-role-toggle input { width: 12px; height: 12px; padding: 0; margin: 0; accent-color: var(--forest); }
+.seed-options .admin-role-toggle:has(input:checked) { border-color: #cfdbc6; background: #f1f5ec; color: #345238; }
+.seed-options .admin-role-toggle:has(input:focus-visible) { outline: 2px solid #a58c45; outline-offset: 2px; }
+.seed-options:disabled .admin-role-toggle { cursor: default; opacity: .7; }
+.seed-progress { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.seed-progress-label { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; color: var(--muted); }
+.seed-progress-label > :first-child { color: var(--ink); font-weight: 600; }
+.seed-bar { height: 8px; border-radius: 4px; background: #eef1ea; overflow: hidden; }
+.seed-bar > span { display: block; height: 100%; background: var(--forest); transition: width .4s ease; }
+.seed-note { margin: 0; font-size: 11px; color: var(--muted); line-height: 1.6; }
+@media (max-width: 900px) { .seed-body { grid-template-columns: 1fr; gap: 20px; padding: 20px; } .seed-body .admin-row-actions { justify-content: flex-start; } }
+
 .role-options .role-option-approved,
 .role-options .role-option-approved:hover,
 .role-options .role-option-approved:has(input:checked) { cursor: default; background: #f2f6ed; border-color: #d4e0c9; box-shadow: none; }

@@ -543,6 +543,70 @@ function Admin({ me, onChanged }) {
   );
 }
 
+function Seed({ me }) {
+  const [images, setImages] = useState(20),
+    [seed, setSeed] = useState(null),
+    [starting, setStarting] = useState(false),
+    [error, setError] = useState("");
+  const load = async (count = images) => {
+    try { setSeed(await api(`/admin/seed?images=${count}`)); setError(""); }
+    catch (e) { setError(e.message); }
+  };
+  useEffect(() => {
+    load(images);
+    const timer = setInterval(() => load(images), 5000);
+    return () => clearInterval(timer);
+  }, [images]);
+  const run = seed?.run;
+  const running = run?.state === "RUNNING";
+  async function start() {
+    if (!window.confirm(`Load ${images} demo images into the library?\n\nThey will be owned by your account (${me.email}). Images already in the library are skipped. Generating descriptions uses OpenRouter credit.`)) return;
+    setStarting(true); setError("");
+    try { setSeed(await post("/admin/seed", { images })); }
+    catch (e) { setError(e.message); }
+    finally { setStarting(false); }
+  }
+  const total = seed?.images || images;
+  const stored = seed ? total - seed.missing - seed.uploading : 0;
+  const percent = seed ? Math.round((seed.ready / total) * 100) : 0;
+  return (
+    <div className="admin-workspace">
+      <div className="admin-page-heading">
+        <div><span className="eyebrow">ADMINISTRATION</span><h2>Seed demo library</h2><p>Load curated, credited nature photographs into this library's storage and index them like normal uploads.</p></div>
+        <div className="admin-summary" aria-label="Seed overview">
+          <div><strong>{seed ? seed.ready : "–"}</strong><span>Ready</span></div>
+          <div><strong>{seed ? seed.processing : "–"}</strong><span>Indexing</span></div>
+          <div><strong>{seed ? seed.missing + seed.uploading : "–"}</strong><span>Not loaded</span></div>
+        </div>
+      </div>
+      <ErrorNotice error={error} />
+      {run?.state === "FAILED" && <div role="alert" className="notice error">{run.error}</div>}
+      {run?.state === "COMPLETED" && run.images === images && <div role="status" className="notice admin-feedback">All {run.images} images are stored. Indexing continues in the background.</div>}
+      <section className="panel seed-panel">
+        <div className="admin-section-heading"><div><h3>Choose a collection size</h3><p>Larger sets include the smaller ones, so you can grow the library later without duplicates.</p></div><span className="admin-live-note"><span />Updates automatically</span></div>
+        <div className="seed-body">
+          <fieldset className="seed-options" disabled={running || starting}><legend className="sr-only">Number of images</legend>
+            {(seed?.options || [20, 50, 100, 500]).map(count => <label key={count} className="admin-role-toggle">
+              <input type="radio" name="images" value={count} checked={images === count} onChange={() => setImages(count)} /><span>{count} images</span>
+            </label>)}
+          </fieldset>
+          <div className="seed-progress">
+            <div className="seed-progress-label"><span>{seed ? `${seed.ready} of ${total} ready` : "Checking library…"}</span><span>{running ? `Storing ${run.processed}/${run.images}…` : `${stored} of ${total} stored`}</span></div>
+            <div className="seed-bar" role="progressbar" aria-label="Images ready" aria-valuemin="0" aria-valuemax={total} aria-valuenow={seed?.ready || 0}><span style={{ width: `${percent}%` }} /></div>
+            {seed?.failed > 0 && <p className="seed-note">{seed.failed} image{seed.failed === 1 ? "" : "s"} failed indexing. Check the ML worker logs.</p>}
+            <p className="seed-note">Images are owned by you. To browse them in Search, enable the Researcher role for yourself on the Admin tab.</p>
+          </div>
+          <div className="admin-row-actions">
+            <button className="admin-approve" disabled={running || starting || !seed || (seed.missing + seed.uploading === 0)} onClick={start}>
+              {running ? "Seeding…" : starting ? "Starting…" : seed && seed.missing + seed.uploading === 0 ? "Already loaded" : `Load ${images} images`}
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function App() {
   const [me, setMe] = useState(null),
     [error, setError] = useState(""),
@@ -598,6 +662,7 @@ function App() {
     ["Search", "RESEARCHER"],
     ["Upload", "UPLOADER"],
     ["Admin", "ADMIN"],
+    ["Seed", "ADMIN"],
   ].filter(([, role]) => me?.roles.includes(role));
   if (me && !me.roles.includes("ADMIN") && !roles.every(role => me.roles.includes(role))) tabs.push(["Access", ""]);
   const selected = tabs.some(([name]) => name === tab) ? tab : tabs[0]?.[0];
@@ -639,6 +704,8 @@ function App() {
           <Research />
         ) : selected === "Upload" ? (
           <Upload />
+        ) : selected === "Seed" ? (
+          <Seed me={me} />
         ) : (
           <Admin me={me} onChanged={refresh} />
         )}

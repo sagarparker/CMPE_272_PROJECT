@@ -24,8 +24,9 @@ import com.mediamesh.storage.MediaStorage;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
-@SpringBootTest(properties={"spring.flyway.target=200","spring.main.banner-mode=off"})
+@SpringBootTest(properties={"mediamesh.security.admin-email=owner@example.org","spring.flyway.target=200","spring.main.banner-mode=off"})
 @AutoConfigureMockMvc
 @Testcontainers
 class ApplicationSecurityTest {
@@ -74,13 +75,23 @@ class ApplicationSecurityTest {
     String token(String subject,String audience,Date expiry) throws Exception {
         var claims=new JWTClaimsSet.Builder().issuer("https://identity.test/realms/mediamesh").subject(subject)
             .audience(audience).issueTime(new Date()).expirationTime(expiry).claim("sid","session-"+subject)
-            .claim("auth_time",System.currentTimeMillis()/1000).claim("name",subject).claim("identity_provider","google").claim("email_verified",true).claim("email",subject.equals("admin") ? "sagar.parker@sjsu.edu" : subject+"@example.org").build();
+            .claim("auth_time",System.currentTimeMillis()/1000).claim("name",subject).claim("identity_provider","google").claim("email_verified",true).claim("email",subject.equals("admin") ? "owner@example.org" : subject+"@example.org").build();
         var jwt=new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("test").build(),claims);
         jwt.sign(new RSASSASigner(key));return jwt.serialize();
     }
     String userId(String token) throws Exception {
         var result=mvc.perform(get("/api/me").header("Authorization","Bearer "+token)).andExpect(status().isOk()).andReturn();
         return json.readTree(result.getResponse().getContentAsString()).get("id").asText();
+    }
+    @Test void configuredAdministratorReplacesPreviousAdministrator() throws Exception {
+        UUID previous = UUID.randomUUID();
+        jdbc.update("INSERT INTO users(id,issuer,subject,email,display_name,primary_admin) VALUES (?,?,?,?,?,true)",
+            previous, "https://identity.test/realms/mediamesh", "previous-admin", "previous@example.org", "Previous");
+        jdbc.update("INSERT INTO user_roles VALUES (?,'ADMIN')", previous);
+        String current = userId(token("admin"));
+        assertEquals(false, jdbc.queryForObject("SELECT primary_admin FROM users WHERE id=?", Boolean.class, previous));
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM user_roles WHERE user_id=? AND role='ADMIN'", Integer.class, previous));
+        assertEquals(true, jdbc.queryForObject("SELECT primary_admin FROM users WHERE id=?", Boolean.class, UUID.fromString(current)));
     }
     @Test void jwtValidationAndAnonymousDenial() throws Exception {
         mvc.perform(get("/api/me")).andExpect(status().isUnauthorized());

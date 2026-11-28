@@ -54,6 +54,7 @@ def prepare(domain, email, account, admin_email, container, output):
     values = {
         "APP_DOMAIN": domain,
         "ACME_EMAIL": email,
+        "ADMIN_EMAIL": admin_email,
         "AZURE_STORAGE_ACCOUNT": account,
         "AZURE_STORAGE_CONTAINER": container,
         "DATABASE_PASSWORD": secrets.token_hex(32),
@@ -75,7 +76,7 @@ def prepare(domain, email, account, admin_email, container, output):
         "".join(f"{key}={value}\n" for key, value in values.items())
     )
     (output / "first-login.txt").write_text(
-        f"URL: {origin}\nSign in with Google as sagar.parker@sjsu.edu.\n"
+        f"URL: {origin}\nSign in with Google as {admin_email}.\n"
         "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in deploy.env before starting Keycloak.\n"
     )
     (output / "azure-cors.json").write_text(
@@ -104,7 +105,7 @@ def main():
     parser.add_argument("--domain", required=True)
     parser.add_argument("--email", required=True, help="Certificate renewal contact")
     parser.add_argument("--account", required=True)
-    parser.add_argument("--admin-email", default="sagar.parker@sjsu.edu", help="Legacy argument; application admin is fixed to sagar.parker@sjsu.edu")
+    parser.add_argument("--admin-email", required=True, help="Verified Google email for the sole administrator")
     parser.add_argument("--container", default="mediamesh")
     args = parser.parse_args()
     try:

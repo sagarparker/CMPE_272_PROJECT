@@ -123,6 +123,17 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <!-- Single source of truth for the Seed tab; Docker builds pass it as the "evaluation" context. -->
+            <resource>
+                <directory>${project.basedir}/../ml-service/evaluation</directory>
+                <includes><include>demo-manifest.json</include></includes>
+                <targetPath>demo</targetPath>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

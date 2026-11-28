@@ -9,7 +9,7 @@ access. The administrator reviews it in **Admin → Pending access requests**.
   ready library media.
 - One account can hold both roles. Approving a request adds the requested roles
   without removing existing access.
-- **sagar.parker@sjsu.edu** is the sole administrator. Its first verified Google
+- The Google email set in **`ADMIN_EMAIL`** is the sole administrator. Its first verified Google
   sign-in creates administrator access automatically. ADMIN cannot be requested,
   granted to another account, removed, or deleted through the portal.
 
@@ -20,7 +20,7 @@ access. The administrator reviews it in **Admin → Pending access requests**.
 2. Register the exact authorized redirect URI:
    - Local: `http://localhost:8080/auth/realms/mediamesh/broker/google/endpoint`
    - Hosted: `https://YOUR_DOMAIN/auth/realms/mediamesh/broker/google/endpoint`
-3. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in the private Compose env file
+3. Set `ADMIN_EMAIL` to your administrator’s Google email, plus `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in the private Compose env file
    (`.env` locally, `infra/deploy/runtime/deploy.env` when hosted).
 4. For a **new realm**, start the stack normally. The imported realm reads these
    values from the Keycloak container environment. Deployment preparation creates
@@ -42,7 +42,7 @@ access. The administrator reviews it in **Admin → Pending access requests**.
    safe to rerun. Restarting Keycloak is unnecessary after the updater.
 6. Rebuild backend and frontend together. Migration V407 removes previous ADMIN
    grants and adds persisted access requests. Sign out of older password sessions
-   and sign in with Google as `sagar.parker@sjsu.edu`.
+   and sign in with Google as the Google email configured by `ADMIN_EMAIL`.
 
 The Google provider trusts Google email assertions (`trustEmail=true`) and uses
 `syncMode=FORCE` for profile updates. On older Keycloak versions, existing users

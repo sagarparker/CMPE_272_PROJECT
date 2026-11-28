@@ -18,6 +18,7 @@ mediamesh:
   storage:
     max-upload-bytes: ${STORAGE_MAX_UPLOAD_BYTES:100000000}
   security:
+    admin-email: ${ADMIN_EMAIL:}
     issuer: ${OIDC_ISSUER:http://localhost:8081/realms/mediamesh}
     jwk-set-uri: ${OIDC_JWKS:http://localhost:8081/realms/mediamesh/protocol/openid-connect/certs}
     audience: ${OIDC_AUDIENCE:mediamesh-api}

@@ -24,7 +24,7 @@ uses `ML_SEARCH_BUSY`, both HTTP 503. See the observability documents for the
 | GET `/api/admin/users` | ADMIN | Array of provisioned user profiles |
 | PUT `/api/admin/users/{id}/roles` | ADMIN | `{roles:["UPLOADER","RESEARCHER"]}` replaces complete role set; audited |
 
-Only verified Google sign-in as `sagar.parker@sjsu.edu` receives ADMIN. Additional
+Only verified Google sign-in as the email configured by `ADMIN_EMAIL` receives ADMIN. Additional
 administrators cannot be created or granted. The designated administrator cannot
 be removed or deleted. `requestStatus` is `NONE`, `PENDING`, `APPROVED`, or
 `REJECTED`. Only one request may be pending per user; rejected requests can be
